@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: murmurai
+Version: 0.1.0
+Summary: Push-to-talk voice transcription for macOS
+Requires-Python: >=3.9
+Requires-Dist: pynput>=1.7.6
+Requires-Dist: sounddevice>=0.4.6
+Requires-Dist: soundfile>=0.12.1
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: rumps>=0.4.0
