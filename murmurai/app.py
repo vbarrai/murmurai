@@ -1,4 +1,3 @@
-import os
 import threading
 
 import rumps
@@ -6,14 +5,14 @@ from pynput import keyboard
 
 from murmurai.paster import paste_text
 from murmurai.recorder import AudioRecorder
-from murmurai.transcriber import OpenAITranscriber
+from murmurai.transcriber import LocalTranscriber
 
 
 class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
         self.recorder = AudioRecorder()
-        self.transcriber = OpenAITranscriber()
+        self.transcriber = LocalTranscriber()
         self._is_recording = False
         self._hotkey_listener = None
 
@@ -24,14 +23,6 @@ class MurmurAIApp(rumps.App):
             rumps.MenuItem("Hotkey: Right Option (hold)", callback=None),
             None,
         ]
-
-        # Check API key
-        if not os.environ.get("OPENAI_API_KEY"):
-            rumps.notification(
-                "murmurai",
-                "API Key Missing",
-                "Set OPENAI_API_KEY environment variable",
-            )
 
     def start_hotkey_listener(self):
         """Start listening for the Right Option key."""
