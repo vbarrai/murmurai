@@ -12,5 +12,8 @@ dependencies = [
     "rumps>=0.4.0",
 ]
 
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0.0"]
+
 [project.scripts]
 murmurai = "murmurai.app:main"

@@ -45,6 +45,43 @@ murmurai
 
 Hold **Right Option** to record, release to transcribe and paste.
 
+## Development
+
+During development, run directly from source to test your latest changes:
+
+```bash
+source .venv/bin/activate
+murmurai
+```
+
+This always runs the current code — no rebuild needed.
+
+## Build standalone .app
+
+To package murmurai as a standalone macOS app (no Python required):
+
+```bash
+pip install -e ".[build]"
+pyinstaller murmurai.spec --noconfirm
+```
+
+The app is generated at `dist/murmurai.app`. Double-click to launch or move it to `/Applications`:
+
+```bash
+cp -r dist/murmurai.app /Applications/
+```
+
+### Updating the app after code changes
+
+Re-run the build — it overwrites the previous version automatically:
+
+```bash
+pyinstaller murmurai.spec --noconfirm
+
+# If installed in /Applications, re-copy
+cp -r dist/murmurai.app /Applications/
+```
+
 ## Configuration
 
 You can change the Whisper model size in `murmurai/transcriber.py`:
