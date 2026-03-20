@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import queue
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,19 +13,30 @@ import soundfile as sf
 
 
 class AudioRecorder:
-    """Records microphone audio to a temporary WAV file."""
+    """Records microphone audio with optional chunk streaming."""
 
-    def __init__(self, sample_rate: int = 16000, channels: int = 1):
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        channels: int = 1,
+        chunk_interval: float = 1.5,
+    ):
         self.sample_rate = sample_rate
         self.channels = channels
+        self.chunk_interval = chunk_interval
         self._frames: List[np.ndarray] = []
         self._stream: Optional[sd.InputStream] = None
+        self._chunk_queue: Optional[queue.Queue] = None
         self._lock = threading.Lock()
 
-    def start(self):
-        """Start recording from the microphone."""
+    def start(self, chunk_queue: Optional[queue.Queue] = None):
+        """Start recording from the microphone.
+
+        If chunk_queue is provided, audio chunks are emitted periodically.
+        """
         with self._lock:
             self._frames = []
+            self._chunk_queue = chunk_queue
             self._stream = sd.InputStream(
                 samplerate=self.sample_rate,
                 channels=self.channels,
@@ -32,8 +45,11 @@ class AudioRecorder:
             )
             self._stream.start()
 
+        if chunk_queue is not None:
+            threading.Thread(target=self._chunk_emitter, daemon=True).start()
+
     def stop(self) -> Optional[Path]:
-        """Stop recording and return the path to the WAV file."""
+        """Stop recording. Flushes remaining audio to the chunk queue if streaming."""
         with self._lock:
             if self._stream is None:
                 return None
@@ -41,19 +57,41 @@ class AudioRecorder:
             self._stream.close()
             self._stream = None
 
-            if not self._frames:
-                return None
-
-            audio_data = np.concatenate(self._frames, axis=0)
+            remaining = None
+            if self._frames:
+                remaining = np.concatenate(self._frames, axis=0)
             self._frames = []
 
-        # Skip very short recordings (< 0.3s)
-        if len(audio_data) < self.sample_rate * 0.3:
+        # Streaming mode: flush remaining + sentinel
+        if self._chunk_queue is not None:
+            if remaining is not None and len(remaining) > 0:
+                self._chunk_queue.put(remaining)
+            self._chunk_queue.put(None)  # sentinel
+            self._chunk_queue = None
             return None
 
+        # Non-streaming fallback
+        if remaining is None:
+            return None
+        if len(remaining) < self.sample_rate * 0.3:
+            return None
         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        sf.write(tmp.name, audio_data, self.sample_rate)
+        sf.write(tmp.name, remaining, self.sample_rate)
         return Path(tmp.name)
+
+    def _chunk_emitter(self):
+        """Periodically emit accumulated audio frames to the chunk queue."""
+        while True:
+            time.sleep(self.chunk_interval)
+            with self._lock:
+                if self._stream is None or not self._stream.active:
+                    break
+                if not self._frames:
+                    continue
+                chunk = np.concatenate(self._frames, axis=0)
+                self._frames = []
+            if self._chunk_queue is not None:
+                self._chunk_queue.put(chunk)
 
     def _audio_callback(self, indata, frames, time, status):
         if status:

@@ -2,7 +2,7 @@
 
 Push-to-talk voice transcription for macOS. Hold a key, speak, release — your speech is transcribed locally and pasted at the cursor.
 
-Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline transcription (no API key needed).
+Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline transcription (no API key needed). Audio is transcribed in real-time while you speak (streaming), so the result is ready almost instantly when you release the key.
 
 ## Installation
 
@@ -19,23 +19,17 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-The Whisper model (~1.5 Go for `medium`) is downloaded automatically at first launch.
+The Whisper model (~500 Mo for `small`) is downloaded automatically at first launch.
 
 ## macOS permissions
 
-murmurai needs two permissions in **System Settings > Privacy & Security**:
+murmurai needs three permissions in **System Settings > Privacy & Security**:
 
-- **Accessibility** — to listen for hotkeys and simulate Cmd+V for pasting
+- **Accessibility** — to listen for the global hotkey
 - **Microphone** — to record audio
+- **Automation (System Events)** — to simulate Cmd+V for pasting
 
-When running from the terminal, add your terminal app (Terminal.app, iTerm, etc.) to both lists.
-When running the standalone `.app`, add `murmurai.app` instead.
-
-You may also need to create the Info.plist for notifications:
-
-```bash
-/usr/libexec/PlistBuddy -c 'Add :CFBundleIdentifier string "rumps"' .venv/bin/Info.plist
-```
+On first launch, macOS will prompt you for each permission automatically. Grant access and the app will activate without needing a restart.
 
 ## Usage
 

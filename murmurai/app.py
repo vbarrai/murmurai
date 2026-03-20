@@ -1,5 +1,6 @@
 import logging
 import multiprocessing
+import queue
 import subprocess
 import threading
 import time
@@ -157,7 +158,26 @@ class MurmurAIApp(rumps.App):
         self._is_recording = True
         self.title = "🔴"
         log.info("Recording started")
-        self.recorder.start()
+
+        # Create streaming pipeline
+        self._chunk_queue = queue.Queue()
+        self._transcript_result = ""
+
+        # Start transcription consumer thread (processes chunks as they arrive)
+        def consume():
+            try:
+                self._transcript_result = self.transcriber.transcribe_stream(
+                    self._chunk_queue
+                )
+            except Exception as e:
+                log.error("Streaming transcription failed: %s", e)
+                self._transcript_result = ""
+
+        self._transcribe_thread = threading.Thread(target=consume, daemon=True)
+        self._transcribe_thread.start()
+
+        # Start recording with chunk streaming
+        self.recorder.start(chunk_queue=self._chunk_queue)
         self._start_stuck_guard()
 
     def _start_stuck_guard(self):
@@ -166,7 +186,6 @@ class MurmurAIApp(rumps.App):
         def guard():
             while self._is_recording:
                 time.sleep(0.5)
-                # Check if Option key is currently held by reading modifier flags
                 flags = Quartz.CGEventSourceFlagsState(
                     Quartz.kCGEventSourceStateHIDSystemState
                 )
@@ -180,35 +199,29 @@ class MurmurAIApp(rumps.App):
     def _stop_recording_and_transcribe(self):
         self._is_recording = False
         self.title = "⏳"
+        log.info("Recording stopped, finalizing transcription...")
 
-        audio_path = self.recorder.stop()
-        if audio_path is None:
-            log.info("Recording too short, skipped")
-            self.title = "🎤"
-            return
+        # Stop recording — flushes remaining audio + sentinel to queue
+        self.recorder.stop()
 
-        log.info("Recording stopped, saved to %s", audio_path)
-
-        # Transcribe in background thread
-        def do_transcribe():
+        def finalize():
             try:
-                log.info("Transcribing...")
-                text = self.transcriber.transcribe(audio_path)
-                log.info("Transcription: %s", text)
-                paste_text(text)
-                log.info("Text pasted to cursor")
+                # Wait for transcription thread to finish processing all chunks
+                self._transcribe_thread.join(timeout=15)
+                text = self._transcript_result.strip()
+                if text:
+                    log.info("Final transcription: %s", text)
+                    paste_text(text)
+                    log.info("Text pasted to cursor")
+                else:
+                    log.info("No transcription result")
             except Exception as e:
-                log.error("Transcription failed: %s", e)
+                log.error("Finalization failed: %s", e)
                 rumps.notification("murmurai", "Error", str(e))
             finally:
                 self.title = "🎤"
-                # Clean up temp file
-                try:
-                    audio_path.unlink()
-                except OSError:
-                    pass
 
-        threading.Thread(target=do_transcribe, daemon=True).start()
+        threading.Thread(target=finalize, daemon=True).start()
 
 
 def main():
