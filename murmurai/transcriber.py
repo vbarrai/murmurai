@@ -22,6 +22,8 @@ class LocalTranscriber:
         segments, _ = self._model.transcribe(
             str(audio_path),
             language=self.language,
-            beam_size=5,
+            beam_size=1,
+            vad_filter=True,
+            condition_on_previous_text=False,
         )
         return " ".join(segment.text.strip() for segment in segments)
