@@ -25,10 +25,11 @@ The Whisper model (~1.5 Go for `medium`) is downloaded automatically at first la
 
 murmurai needs two permissions in **System Settings > Privacy & Security**:
 
-- **Accessibility** — to simulate Cmd+V for pasting
+- **Accessibility** — to listen for hotkeys and simulate Cmd+V for pasting
 - **Microphone** — to record audio
 
-Add your terminal app (Terminal.app, iTerm, etc.) to both lists.
+When running from the terminal, add your terminal app (Terminal.app, iTerm, etc.) to both lists.
+When running the standalone `.app`, add `murmurai.app` instead.
 
 You may also need to create the Info.plist for notifications:
 
@@ -62,25 +63,20 @@ To package murmurai as a standalone macOS app (no Python required):
 
 ```bash
 pip install -e ".[build]"
-pyinstaller murmurai.spec --noconfirm
+make install
 ```
 
-The app is generated at `dist/murmurai.app`. Double-click to launch or move it to `/Applications`:
+This builds the app and installs it to `/Applications/murmurai.app`.
+
+To build without installing:
 
 ```bash
-cp -r dist/murmurai.app /Applications/
+make build
 ```
 
-### Updating the app after code changes
+### Logs
 
-Re-run the build — it overwrites the previous version automatically:
-
-```bash
-pyinstaller murmurai.spec --noconfirm
-
-# If installed in /Applications, re-copy
-cp -r dist/murmurai.app /Applications/
-```
+Logs are written to `~/Library/Logs/murmurai/murmurai.log`.
 
 ## Configuration
 

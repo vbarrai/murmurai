@@ -1,14 +1,34 @@
 import logging
+import multiprocessing
 import threading
+from pathlib import Path
 
 import rumps
-from pynput import keyboard
+import Quartz
+from Quartz import (
+    CGEventMaskBit,
+    CGEventTapCreate,
+    CFMachPortCreateRunLoopSource,
+    CFRunLoopGetCurrent,
+    CFRunLoopAddSource,
+    CFRunLoopRun,
+    kCGEventFlagsChanged,
+    kCGEventTapOptionDefault,
+    kCGHeadInsertEventTap,
+    kCGSessionEventTap,
+    kCFRunLoopCommonModes,
+)
 
 from murmurai.paster import paste_text
 from murmurai.recorder import AudioRecorder
 from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
+
+# Right Option key code
+_kVK_RightOption = 0x3D
+# Alternate/Option flag
+_kCGEventFlagMaskAlternate = 0x00080000
 
 
 class MurmurAIApp(rumps.App):
@@ -19,7 +39,6 @@ class MurmurAIApp(rumps.App):
         self.transcriber = LocalTranscriber()
         log.info("Model loaded, ready.")
         self._is_recording = False
-        self._hotkey_listener = None
 
         # Menu items
         self.menu = [
@@ -30,23 +49,54 @@ class MurmurAIApp(rumps.App):
         ]
 
     def start_hotkey_listener(self):
-        """Start listening for the Right Option key."""
+        """Start listening for the Right Option key using Quartz CGEventTap."""
         log.info("Listening for Right Option key (hold to record)")
-        self._right_option_pressed = False
 
-        def on_press(key):
-            # Right Option key = Key.alt_r
-            if key == keyboard.Key.alt_r and not self._is_recording:
-                self._start_recording()
+        def callback(proxy, event_type, event, refcon):
+            keycode = Quartz.CGEventGetIntegerValueField(
+                event, Quartz.kCGKeyboardEventKeycode
+            )
+            flags = Quartz.CGEventGetFlags(event)
 
-        def on_release(key):
-            if key == keyboard.Key.alt_r and self._is_recording:
-                self._stop_recording_and_transcribe()
+            if keycode == _kVK_RightOption:
+                option_down = bool(flags & _kCGEventFlagMaskAlternate)
+                if option_down and not self._is_recording:
+                    self._start_recording()
+                elif not option_down and self._is_recording:
+                    self._stop_recording_and_transcribe()
 
-        self._hotkey_listener = keyboard.Listener(
-            on_press=on_press, on_release=on_release
+            return event
+
+        mask = CGEventMaskBit(kCGEventFlagsChanged)
+        tap = CGEventTapCreate(
+            kCGSessionEventTap,
+            kCGHeadInsertEventTap,
+            kCGEventTapOptionDefault,
+            mask,
+            callback,
+            None,
         )
-        self._hotkey_listener.start()
+
+        if tap is None:
+            log.error(
+                "Failed to create event tap — accessibility permission not granted"
+            )
+            rumps.notification(
+                "murmurai",
+                "Permission required",
+                "Grant Accessibility access in System Settings > Privacy & Security",
+            )
+            return
+
+        log.info("Event tap created successfully")
+        source = CFMachPortCreateRunLoopSource(None, tap, 0)
+
+        def run_tap():
+            loop = CFRunLoopGetCurrent()
+            CFRunLoopAddSource(loop, source, kCFRunLoopCommonModes)
+            CFRunLoopRun()
+
+        threading.Thread(target=run_tap, daemon=True).start()
 
     def _start_recording(self):
         self._is_recording = True
@@ -89,10 +139,19 @@ class MurmurAIApp(rumps.App):
 
 
 def main():
+    multiprocessing.freeze_support()
+
+    log_file = Path.home() / "Library" / "Logs" / "murmurai" / "murmurai.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(message)s",
         datefmt="%H:%M:%S",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(log_file),
+        ],
     )
     app = MurmurAIApp()
     app.start_hotkey_listener()
@@ -100,4 +159,5 @@ def main():
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main()

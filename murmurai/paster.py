@@ -5,7 +5,8 @@ import time
 def paste_text(text: str):
     """Paste text at the current cursor position using pbcopy + Cmd+V."""
     # Copy text to clipboard via pbcopy
-    process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+    env = {**subprocess.os.environ, "LANG": "en_US.UTF-8"}
+    process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE, env=env)
     process.communicate(text.encode("utf-8"))
 
     # Small delay to ensure clipboard is ready
