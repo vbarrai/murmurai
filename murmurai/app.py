@@ -59,6 +59,31 @@ def _check_system_events() -> bool:
     return result.returncode == 0
 
 
+def _check_microphone() -> bool:
+    """Check if the app has microphone permission by trying a short recording."""
+    import AVFoundation
+    status = AVFoundation.AVCaptureDevice.authorizationStatusForMediaType_(
+        AVFoundation.AVMediaTypeAudio
+    )
+    if status == AVFoundation.AVAuthorizationStatusAuthorized:
+        return True
+    if status == AVFoundation.AVAuthorizationStatusNotDetermined:
+        # Request permission — this triggers the macOS prompt
+        granted = [False]
+        event = threading.Event()
+
+        def handler(granted_val):
+            granted[0] = granted_val
+            event.set()
+
+        AVFoundation.AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+            AVFoundation.AVMediaTypeAudio, handler
+        )
+        event.wait(timeout=30)
+        return granted[0]
+    return False
+
+
 class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
@@ -67,6 +92,7 @@ class MurmurAIApp(rumps.App):
         self.transcriber = LocalTranscriber()
         log.info("Model loaded, ready.")
         self._is_recording = False
+        self._pending_quit = False
 
         # Menu items
         self.menu = [
@@ -76,22 +102,47 @@ class MurmurAIApp(rumps.App):
             None,
         ]
 
+    @rumps.timer(1)
+    def _check_pending_quit(self, _):
+        """Check if we need to show the quit dialog (must run on main thread)."""
+        if self._pending_quit:
+            self._pending_quit = False
+            rumps.alert(
+                title="murmurai",
+                message="All permissions granted. Please reopen murmurai for changes to take effect.",
+                ok="Quit",
+            )
+            rumps.quit_application()
+
     def _check_permissions_at_startup(self):
         """Check all permissions at startup. Let macOS prompt the user."""
         # Step 1: Check accessibility — triggers macOS prompt if not granted
         if not _check_accessibility():
             log.info("Accessibility permission not granted, macOS will prompt")
-            # Poll until granted
             def wait_for_accessibility():
                 while not _check_accessibility():
                     time.sleep(2)
                 log.info("Accessibility permission granted")
-                # Now check System Events
-                self._check_and_setup_paste()
+                self._check_microphone()
             threading.Thread(target=wait_for_accessibility, daemon=True).start()
             return
 
         log.info("Accessibility permission OK")
+        self._check_microphone()
+
+    def _check_microphone(self):
+        """Check microphone permission, then proceed to System Events check."""
+        if not _check_microphone():
+            log.info("Microphone permission not granted, polling...")
+            def wait_for_microphone():
+                while not _check_microphone():
+                    time.sleep(2)
+                log.info("Microphone permission granted")
+                self._check_and_setup_paste()
+            threading.Thread(target=wait_for_microphone, daemon=True).start()
+            return
+
+        log.info("Microphone permission OK")
         self._check_and_setup_paste()
 
     def _check_and_setup_paste(self):
@@ -103,8 +154,7 @@ class MurmurAIApp(rumps.App):
                 while not _check_system_events():
                     time.sleep(2)
                 log.info("System Events permission granted")
-                self._setup_event_tap()
-                rumps.notification("murmurai", "Ready", "Hold Right Option to record.")
+                self._pending_quit = True
             threading.Thread(target=wait_for_system_events, daemon=True).start()
             return
 

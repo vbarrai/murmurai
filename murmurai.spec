@@ -20,6 +20,7 @@ a = Analysis(
         "murmurai.paster",
         "rumps",
         "Quartz",
+        "AVFoundation",
         "sounddevice",
         "soundfile",
         "numpy",
