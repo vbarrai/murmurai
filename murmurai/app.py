@@ -1,6 +1,8 @@
 import logging
 import multiprocessing
+import subprocess
 import threading
+import time
 from pathlib import Path
 
 import rumps
@@ -31,6 +33,31 @@ _kVK_RightOption = 0x3D
 _kCGEventFlagMaskAlternate = 0x00080000
 
 
+def _check_accessibility() -> bool:
+    """Check if the app has accessibility permission."""
+    tap = CGEventTapCreate(
+        kCGSessionEventTap,
+        kCGHeadInsertEventTap,
+        kCGEventTapOptionDefault,
+        CGEventMaskBit(kCGEventFlagsChanged),
+        lambda *args: args[2],
+        None,
+    )
+    if tap is None:
+        return False
+    del tap
+    return True
+
+
+def _check_system_events() -> bool:
+    """Check if the app has System Events (Automation) permission by doing a test call."""
+    result = subprocess.run(
+        ["osascript", "-e", 'tell application "System Events" to return ""'],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
 class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
@@ -48,8 +75,43 @@ class MurmurAIApp(rumps.App):
             None,
         ]
 
-    def start_hotkey_listener(self):
-        """Start listening for the Right Option key using Quartz CGEventTap."""
+    def _check_permissions_at_startup(self):
+        """Check all permissions at startup. Let macOS prompt the user."""
+        # Step 1: Check accessibility — triggers macOS prompt if not granted
+        if not _check_accessibility():
+            log.info("Accessibility permission not granted, macOS will prompt")
+            # Poll until granted
+            def wait_for_accessibility():
+                while not _check_accessibility():
+                    time.sleep(2)
+                log.info("Accessibility permission granted")
+                # Now check System Events
+                self._check_and_setup_paste()
+            threading.Thread(target=wait_for_accessibility, daemon=True).start()
+            return
+
+        log.info("Accessibility permission OK")
+        self._check_and_setup_paste()
+
+    def _check_and_setup_paste(self):
+        """Check System Events permission, then setup event tap."""
+        if not _check_system_events():
+            log.info("System Events permission not granted, macOS will prompt")
+            # Poll until granted
+            def wait_for_system_events():
+                while not _check_system_events():
+                    time.sleep(2)
+                log.info("System Events permission granted")
+                self._setup_event_tap()
+                rumps.notification("murmurai", "Ready", "Hold Right Option to record.")
+            threading.Thread(target=wait_for_system_events, daemon=True).start()
+            return
+
+        log.info("System Events permission OK")
+        self._setup_event_tap()
+
+    def _setup_event_tap(self):
+        """Create the CGEventTap for the Right Option key."""
         log.info("Listening for Right Option key (hold to record)")
 
         def callback(proxy, event_type, event, refcon):
@@ -78,14 +140,7 @@ class MurmurAIApp(rumps.App):
         )
 
         if tap is None:
-            log.error(
-                "Failed to create event tap — accessibility permission not granted"
-            )
-            rumps.notification(
-                "murmurai",
-                "Permission required",
-                "Grant Accessibility access in System Settings > Privacy & Security",
-            )
+            log.error("Failed to create event tap")
             return
 
         log.info("Event tap created successfully")
@@ -103,6 +158,24 @@ class MurmurAIApp(rumps.App):
         self.title = "🔴"
         log.info("Recording started")
         self.recorder.start()
+        self._start_stuck_guard()
+
+    def _start_stuck_guard(self):
+        """Safety net: if key release event is lost (e.g. macOS dialog steals focus),
+        stop recording after detecting the key is no longer held."""
+        def guard():
+            while self._is_recording:
+                time.sleep(0.5)
+                # Check if Option key is currently held by reading modifier flags
+                flags = Quartz.CGEventSourceFlagsState(
+                    Quartz.kCGEventSourceStateHIDSystemState
+                )
+                option_held = bool(flags & _kCGEventFlagMaskAlternate)
+                if not option_held and self._is_recording:
+                    log.info("Stuck recording detected, stopping")
+                    self._stop_recording_and_transcribe()
+                    break
+        threading.Thread(target=guard, daemon=True).start()
 
     def _stop_recording_and_transcribe(self):
         self._is_recording = False
@@ -154,7 +227,7 @@ def main():
         ],
     )
     app = MurmurAIApp()
-    app.start_hotkey_listener()
+    app._check_permissions_at_startup()
     app.run()
 
 
