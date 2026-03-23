@@ -84,23 +84,65 @@ def _check_microphone() -> bool:
     return False
 
 
+_MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v3"]
+_DEFAULT_MODEL = "small"
+
+
 class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
-        log.info("Loading Whisper model...")
+        self._current_model = _DEFAULT_MODEL
+        log.info("Loading Whisper model (%s)...", self._current_model)
         self.recorder = AudioRecorder()
-        self.transcriber = LocalTranscriber()
+        self.transcriber = LocalTranscriber(model_size=self._current_model)
         log.info("Model loaded, ready.")
         self._is_recording = False
         self._pending_quit = False
+
+        # Model selection submenu
+        self._model_menu = rumps.MenuItem("Model")
+        for size in _MODEL_SIZES:
+            item = rumps.MenuItem(size, callback=self._on_model_selected)
+            if size == self._current_model:
+                item.state = True
+            self._model_menu.add(item)
 
         # Menu items
         self.menu = [
             rumps.MenuItem("murmurai — Push-to-Talk", callback=None),
             None,  # separator
             rumps.MenuItem("Hotkey: Right Option (hold)", callback=None),
+            self._model_menu,
             None,
         ]
+
+    def _on_model_selected(self, sender):
+        if sender.title == self._current_model:
+            return
+        if self._is_recording:
+            return
+        previous = self._current_model
+        self._current_model = sender.title
+        # Update checkmarks
+        for size in _MODEL_SIZES:
+            self._model_menu[size].state = size == self._current_model
+        # Reload model in background
+        self.title = "⏳"
+        log.info("Switching model from %s to %s...", previous, self._current_model)
+
+        def reload():
+            try:
+                self.transcriber = LocalTranscriber(model_size=self._current_model)
+                log.info("Model %s loaded.", self._current_model)
+            except Exception as e:
+                log.error("Failed to load model %s: %s", self._current_model, e)
+                self._current_model = previous
+                for size in _MODEL_SIZES:
+                    self._model_menu[size].state = size == self._current_model
+            finally:
+                self.title = "🎤"
+
+        threading.Thread(target=reload, daemon=True).start()
 
     @rumps.timer(1)
     def _check_pending_quit(self, _):
