@@ -28,10 +28,28 @@ from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
 
-# Right Option key code
-_kVK_RightOption = 0x3D
-# Alternate/Option flag
-_kCGEventFlagMaskAlternate = 0x00080000
+# Hotkey options: each entry maps a display name to (keycode, flag_mask)
+_HOTKEY_OPTIONS = [
+    ("Right Option",  0x3D, 0x00080000),
+    ("Left Option",   0x3A, 0x00080000),
+    ("Right Control", 0x3E, 0x00040000),
+    ("Left Control",  0x3B, 0x00040000),
+    ("Right Command", 0x36, 0x00100000),
+    ("Left Command",  0x37, 0x00100000),
+    ("Right Shift",   0x3C, 0x00020000),
+    ("Left Shift",    0x38, 0x00020000),
+    ("Fn",            0x3F, 0x00800000),
+    ("Caps Lock",     0x39, 0x00010000),
+]
+_DEFAULT_HOTKEY = "Right Option"
+
+# Language options: (display name, whisper language code or None for auto)
+_LANGUAGE_OPTIONS = [
+    ("Français", "fr"),
+    ("English",  "en"),
+    ("Auto-detect", None),
+]
+_DEFAULT_LANGUAGE = "Français"
 
 
 def _check_accessibility() -> bool:
@@ -92,9 +110,19 @@ class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
         self._current_model = _DEFAULT_MODEL
-        log.info("Loading Whisper model (%s)...", self._current_model)
+        self._current_hotkey = _DEFAULT_HOTKEY
+        self._current_language = _DEFAULT_LANGUAGE
+        self._hotkey_keycode, self._hotkey_flag_mask = self._get_hotkey_params(
+            self._current_hotkey
+        )
+
+        # Resolve language code for transcriber
+        language_code = self._get_language_code(self._current_language)
+        log.info("Loading Whisper model (%s), language=%s...", self._current_model, language_code or "auto")
         self.recorder = AudioRecorder()
-        self.transcriber = LocalTranscriber(model_size=self._current_model)
+        self.transcriber = LocalTranscriber(
+            model_size=self._current_model, language=language_code
+        )
         log.info("Model loaded, ready.")
         self._is_recording = False
         self._pending_quit = False
@@ -107,12 +135,29 @@ class MurmurAIApp(rumps.App):
                 item.state = True
             self._model_menu.add(item)
 
+        # Hotkey selection submenu
+        self._hotkey_menu = rumps.MenuItem("Hotkey")
+        for name, _, _ in _HOTKEY_OPTIONS:
+            item = rumps.MenuItem(name, callback=self._on_hotkey_selected)
+            if name == self._current_hotkey:
+                item.state = True
+            self._hotkey_menu.add(item)
+
+        # Language selection submenu
+        self._language_menu = rumps.MenuItem("Language")
+        for name, _ in _LANGUAGE_OPTIONS:
+            item = rumps.MenuItem(name, callback=self._on_language_selected)
+            if name == self._current_language:
+                item.state = True
+            self._language_menu.add(item)
+
         # Menu items
         self.menu = [
             rumps.MenuItem("murmurai — Push-to-Talk", callback=None),
             None,  # separator
-            rumps.MenuItem("Hotkey: Right Option (hold)", callback=None),
+            self._hotkey_menu,
             self._model_menu,
+            self._language_menu,
             None,
             rumps.MenuItem("Open Logs…", callback=self._open_logs),
             None,
@@ -134,13 +179,73 @@ class MurmurAIApp(rumps.App):
 
         def reload():
             try:
-                self.transcriber = LocalTranscriber(model_size=self._current_model)
+                self.transcriber = LocalTranscriber(
+                    model_size=self._current_model,
+                    language=self._get_language_code(self._current_language),
+                )
                 log.info("Model %s loaded.", self._current_model)
             except Exception as e:
                 log.error("Failed to load model %s: %s", self._current_model, e)
                 self._current_model = previous
                 for size in _MODEL_SIZES:
                     self._model_menu[size].state = size == self._current_model
+            finally:
+                self.title = "🎤"
+
+        threading.Thread(target=reload, daemon=True).start()
+
+    @staticmethod
+    def _get_hotkey_params(name: str) -> tuple[int, int]:
+        for hk_name, keycode, flag_mask in _HOTKEY_OPTIONS:
+            if hk_name == name:
+                return keycode, flag_mask
+        return _HOTKEY_OPTIONS[0][1], _HOTKEY_OPTIONS[0][2]
+
+    @staticmethod
+    def _get_language_code(name: str):
+        for lang_name, code in _LANGUAGE_OPTIONS:
+            if lang_name == name:
+                return code
+        return None
+
+    def _on_hotkey_selected(self, sender):
+        if sender.title == self._current_hotkey:
+            return
+        if self._is_recording:
+            return
+        self._current_hotkey = sender.title
+        self._hotkey_keycode, self._hotkey_flag_mask = self._get_hotkey_params(
+            self._current_hotkey
+        )
+        for name, _, _ in _HOTKEY_OPTIONS:
+            self._hotkey_menu[name].state = name == self._current_hotkey
+        log.info("Hotkey changed to %s", self._current_hotkey)
+
+    def _on_language_selected(self, sender):
+        if sender.title == self._current_language:
+            return
+        if self._is_recording:
+            return
+        previous = self._current_language
+        self._current_language = sender.title
+        for name, _ in _LANGUAGE_OPTIONS:
+            self._language_menu[name].state = name == self._current_language
+        # Reload transcriber with new language
+        self.title = "⏳"
+        language_code = self._get_language_code(self._current_language)
+        log.info("Switching language to %s (%s)...", self._current_language, language_code or "auto")
+
+        def reload():
+            try:
+                self.transcriber = LocalTranscriber(
+                    model_size=self._current_model, language=language_code
+                )
+                log.info("Language set to %s.", self._current_language)
+            except Exception as e:
+                log.error("Failed to set language %s: %s", self._current_language, e)
+                self._current_language = previous
+                for name, _ in _LANGUAGE_OPTIONS:
+                    self._language_menu[name].state = name == self._current_language
             finally:
                 self.title = "🎤"
 
@@ -210,8 +315,8 @@ class MurmurAIApp(rumps.App):
         self._setup_event_tap()
 
     def _setup_event_tap(self):
-        """Create the CGEventTap for the Right Option key."""
-        log.info("Listening for Right Option key (hold to record)")
+        """Create the CGEventTap for the selected hotkey."""
+        log.info("Listening for %s key (hold to record)", self._current_hotkey)
 
         def callback(proxy, event_type, event, refcon):
             keycode = Quartz.CGEventGetIntegerValueField(
@@ -219,11 +324,11 @@ class MurmurAIApp(rumps.App):
             )
             flags = Quartz.CGEventGetFlags(event)
 
-            if keycode == _kVK_RightOption:
-                option_down = bool(flags & _kCGEventFlagMaskAlternate)
-                if option_down and not self._is_recording:
+            if keycode == self._hotkey_keycode:
+                key_down = bool(flags & self._hotkey_flag_mask)
+                if key_down and not self._is_recording:
                     self._start_recording()
-                elif not option_down and self._is_recording:
+                elif not key_down and self._is_recording:
                     self._stop_recording_and_transcribe()
 
             return event
@@ -287,8 +392,8 @@ class MurmurAIApp(rumps.App):
                 flags = Quartz.CGEventSourceFlagsState(
                     Quartz.kCGEventSourceStateHIDSystemState
                 )
-                option_held = bool(flags & _kCGEventFlagMaskAlternate)
-                if not option_held and self._is_recording:
+                key_held = bool(flags & self._hotkey_flag_mask)
+                if not key_held and self._is_recording:
                     log.info("Stuck recording detected, stopping")
                     self._stop_recording_and_transcribe()
                     break
