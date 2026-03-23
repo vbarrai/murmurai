@@ -43,13 +43,6 @@ _HOTKEY_OPTIONS = [
 ]
 _DEFAULT_HOTKEY = "Right Option"
 
-# Language options: (display name, whisper language code or None for auto)
-_LANGUAGE_OPTIONS = [
-    ("Français", "fr"),
-    ("English",  "en"),
-    ("Auto-detect", None),
-]
-_DEFAULT_LANGUAGE = "Français"
 
 
 def _check_accessibility() -> bool:
@@ -111,17 +104,15 @@ class MurmurAIApp(rumps.App):
         super().__init__("murmurai", icon=None, title="🎤")
         self._current_model = _DEFAULT_MODEL
         self._current_hotkey = _DEFAULT_HOTKEY
-        self._current_language = _DEFAULT_LANGUAGE
         self._hotkey_keycode, self._hotkey_flag_mask = self._get_hotkey_params(
             self._current_hotkey
         )
+        self._bilingual = True
 
-        # Resolve language code for transcriber
-        language_code = self._get_language_code(self._current_language)
-        log.info("Loading Whisper model (%s), language=%s...", self._current_model, language_code or "auto")
+        log.info("Loading Whisper model (%s)...", self._current_model)
         self.recorder = AudioRecorder()
         self.transcriber = LocalTranscriber(
-            model_size=self._current_model, language=language_code
+            model_size=self._current_model, bilingual=self._bilingual,
         )
         log.info("Model loaded, ready.")
         self._is_recording = False
@@ -143,13 +134,11 @@ class MurmurAIApp(rumps.App):
                 item.state = True
             self._hotkey_menu.add(item)
 
-        # Language selection submenu
-        self._language_menu = rumps.MenuItem("Language")
-        for name, _ in _LANGUAGE_OPTIONS:
-            item = rumps.MenuItem(name, callback=self._on_language_selected)
-            if name == self._current_language:
-                item.state = True
-            self._language_menu.add(item)
+        # Bilingual toggle
+        self._bilingual_item = rumps.MenuItem(
+            "Bilingual FR/EN", callback=self._on_bilingual_toggled,
+        )
+        self._bilingual_item.state = self._bilingual
 
         # Menu items
         self.menu = [
@@ -157,11 +146,19 @@ class MurmurAIApp(rumps.App):
             None,  # separator
             self._hotkey_menu,
             self._model_menu,
-            self._language_menu,
+            self._bilingual_item,
             None,
             rumps.MenuItem("Open Logs…", callback=self._open_logs),
             None,
         ]
+
+    def _on_bilingual_toggled(self, sender):
+        if self._is_recording:
+            return
+        self._bilingual = not self._bilingual
+        sender.state = self._bilingual
+        self.transcriber.bilingual = self._bilingual
+        log.info("Bilingual mode: %s", "ON" if self._bilingual else "OFF")
 
     def _on_model_selected(self, sender):
         if sender.title == self._current_model:
@@ -180,8 +177,7 @@ class MurmurAIApp(rumps.App):
         def reload():
             try:
                 self.transcriber = LocalTranscriber(
-                    model_size=self._current_model,
-                    language=self._get_language_code(self._current_language),
+                    model_size=self._current_model, bilingual=self._bilingual,
                 )
                 log.info("Model %s loaded.", self._current_model)
             except Exception as e:
@@ -201,13 +197,6 @@ class MurmurAIApp(rumps.App):
                 return keycode, flag_mask
         return _HOTKEY_OPTIONS[0][1], _HOTKEY_OPTIONS[0][2]
 
-    @staticmethod
-    def _get_language_code(name: str):
-        for lang_name, code in _LANGUAGE_OPTIONS:
-            if lang_name == name:
-                return code
-        return None
-
     def _on_hotkey_selected(self, sender):
         if sender.title == self._current_hotkey:
             return
@@ -220,36 +209,6 @@ class MurmurAIApp(rumps.App):
         for name, _, _ in _HOTKEY_OPTIONS:
             self._hotkey_menu[name].state = name == self._current_hotkey
         log.info("Hotkey changed to %s", self._current_hotkey)
-
-    def _on_language_selected(self, sender):
-        if sender.title == self._current_language:
-            return
-        if self._is_recording:
-            return
-        previous = self._current_language
-        self._current_language = sender.title
-        for name, _ in _LANGUAGE_OPTIONS:
-            self._language_menu[name].state = name == self._current_language
-        # Reload transcriber with new language
-        self.title = "⏳"
-        language_code = self._get_language_code(self._current_language)
-        log.info("Switching language to %s (%s)...", self._current_language, language_code or "auto")
-
-        def reload():
-            try:
-                self.transcriber = LocalTranscriber(
-                    model_size=self._current_model, language=language_code
-                )
-                log.info("Language set to %s.", self._current_language)
-            except Exception as e:
-                log.error("Failed to set language %s: %s", self._current_language, e)
-                self._current_language = previous
-                for name, _ in _LANGUAGE_OPTIONS:
-                    self._language_menu[name].state = name == self._current_language
-            finally:
-                self.title = "🎤"
-
-        threading.Thread(target=reload, daemon=True).start()
 
     def _open_logs(self, _):
         log_file = Path.home() / "Library" / "Logs" / "murmurai" / "murmurai.log"
