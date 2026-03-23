@@ -23,7 +23,7 @@ from Quartz import (
 )
 
 from murmurai.fusion import ask_agent
-from murmurai.paster import grab_selection, paste_text
+from murmurai.paster import grab_selection, paste_text, replace_text
 from murmurai.recorder import AudioRecorder
 from murmurai.transcriber import LocalTranscriber
 
@@ -346,7 +346,7 @@ class MurmurAIApp(rumps.App):
         self._is_recording = True
         self.title = "🔴"
 
-        # In agent mode, grab the currently selected text before recording
+        # In agent mode, grab the currently selected text via Accessibility API
         self._agent_selection = ""
         if self._agent_mode:
             try:
@@ -426,10 +426,16 @@ class MurmurAIApp(rumps.App):
                     if self._agent_selection:
                         log.info("With selection: %s", self._agent_selection[:100])
                     self.title = "🤖"
-                    text = ask_agent(text, selection=self._agent_selection)
-                    log.info("Agent response: %s", text)
+                    response = ask_agent(text, selection=self._agent_selection)
+                    log.info("Agent response: %s", response)
 
-                paste_text(text)
+                    if self._agent_selection:
+                        replace_text(self._agent_selection, response)
+                    else:
+                        paste_text(response)
+                    text = response
+                else:
+                    paste_text(text)
                 log.info("Text pasted to cursor")
             except Exception as e:
                 log.error("Finalization failed: %s", e)

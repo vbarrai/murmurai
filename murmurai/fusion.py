@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 log = logging.getLogger("murmurai")
 
 _DEFAULT_OLLAMA_URL = "http://localhost:11434"
-_DEFAULT_MODEL = "mistral"
+_DEFAULT_MODEL = "gpt-oss:20b"
 
 _SYSTEM_PROMPT = (
     "You are a bilingual transcript merger. "
@@ -21,6 +21,11 @@ _SYSTEM_PROMPT = (
     "- Keep French parts in French and English parts in English.\n"
     "- Fix obvious transcription errors by cross-referencing both versions.\n"
     "- Do NOT translate anything. Preserve the speaker's language choices.\n"
+    "- Technical terms commonly used in English even by French speakers must stay in English. "
+    "Use the English transcript to detect them. "
+    "Examples: commit, push, pull, merge, deploy, debug, refactor, build, release, sprint, "
+    "feature, bug, issue, branch, tag, review, test, API, endpoint, frontend, backend, database, "
+    "cloud, server, docker, container, pipeline, etc.\n"
     "- Output ONLY the merged transcript, nothing else.\n"
 )
 
@@ -80,13 +85,17 @@ def fuse_transcripts(
 
 
 _AGENT_SYSTEM_PROMPT = (
-    "You are a helpful voice assistant. "
-    "The user dictated a voice instruction using push-to-talk (mix of French and English). "
-    "Respond naturally in the same language the user used. "
-    "If they spoke mostly French, reply in French. If English, reply in English. "
-    "If mixed, match their style. Be concise and direct.\n"
-    "If the user provides selected text as context, apply their voice instruction to that text. "
-    "Output ONLY the result, no explanations."
+    "You are a text transformation assistant.\n"
+    "The user selects text on screen, then dictates a voice instruction.\n"
+    "The 'Selected text' is the SUBJECT — the text to transform.\n"
+    "The 'Voice instruction' tells you WHAT to do with it "
+    "(e.g. 'simplify this sentence', 'translate to English', 'make it shorter').\n"
+    "Rules:\n"
+    "- Apply the instruction to the selected text.\n"
+    "- Output ONLY the resulting text. Nothing else.\n"
+    "- No preamble, no explanation, no quotes, no formatting around it.\n"
+    "- Your output will directly replace the selected text, so it must be ready to use as-is.\n"
+    "- Respond in the same language as the selected text, unless the instruction says otherwise."
 )
 
 
@@ -106,11 +115,14 @@ def ask_agent(
         return ""
 
     if selection:
+        log.info("Agent context — selection: %s", selection[:200])
+        log.info("Agent context — instruction: %s", transcript)
         user_content = (
             f"=== Selected text ===\n{selection}\n\n"
             f"=== Voice instruction ===\n{transcript}"
         )
     else:
+        log.info("Agent context — instruction (no selection): %s", transcript)
         user_content = transcript
 
     payload = json.dumps({
