@@ -29,24 +29,22 @@ from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
 
-# Hotkey options for transcript mode (keycode, flag_mask)
-# Right Command is reserved for agent mode
-_HOTKEY_OPTIONS = [
-    ("Right Option",  0x3D, 0x00080000),
-    ("Left Option",   0x3A, 0x00080000),
-    ("Right Control", 0x3E, 0x00040000),
-    ("Left Control",  0x3B, 0x00040000),
-    ("Left Command",  0x37, 0x00100000),
-    ("Right Shift",   0x3C, 0x00020000),
-    ("Left Shift",    0x38, 0x00020000),
-    ("Fn",            0x3F, 0x00800000),
-    ("Caps Lock",     0x39, 0x00010000),
-]
-_DEFAULT_HOTKEY = "Right Option"
+# Key codes and their corresponding modifier flags
+_HOTKEY_OPTIONS = {
+    "Right Option":  (0x3D, 0x00080000),  # kVK_RightOption, kCGEventFlagMaskAlternate
+    "Right Command": (0x36, 0x00100000),  # kVK_RightCommand, kCGEventFlagMaskCommand
+    "Right Control": (0x3E, 0x00040000),  # kVK_RightControl, kCGEventFlagMaskControl
+    "Left Option":   (0x3A, 0x00080000),  # kVK_LeftOption, kCGEventFlagMaskAlternate
+    "Left Command":  (0x37, 0x00100000),  # kVK_LeftCommand, kCGEventFlagMaskCommand
+    "Left Control":  (0x3B, 0x00040000),  # kVK_LeftControl, kCGEventFlagMaskControl
+    "Right Shift":   (0x3C, 0x00020000),  # kVK_RightShift, kCGEventFlagMaskShift
+    "Left Shift":    (0x38, 0x00020000),  # kVK_LeftShift, kCGEventFlagMaskShift
+    "Fn":            (0x3F, 0x00800000),  # kVK_Function, kCGEventFlagMaskSecondaryFn
+    "Caps Lock":     (0x39, 0x00010000),  # kVK_CapsLock, kCGEventFlagMaskAlphaShift
+}
 
-# Right Command is fixed for agent mode
-_kVK_RightCommand = 0x36
-_kCGEventFlagMaskCommand = 0x00100000
+_DEFAULT_TRANSCRIPT_KEY = "Right Option"
+_DEFAULT_AGENT_KEY = "Right Command"
 
 
 def _check_accessibility() -> bool:
@@ -107,11 +105,9 @@ class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
         self._current_model = _DEFAULT_MODEL
-        self._current_hotkey = _DEFAULT_HOTKEY
-        self._hotkey_keycode, self._hotkey_flag_mask = self._get_hotkey_params(
-            self._current_hotkey
-        )
         self._bilingual = True
+        self._transcript_key = _DEFAULT_TRANSCRIPT_KEY
+        self._agent_key = _DEFAULT_AGENT_KEY
 
         log.info("Loading Whisper model (%s)...", self._current_model)
         self.recorder = AudioRecorder()
@@ -131,13 +127,18 @@ class MurmurAIApp(rumps.App):
                 item.state = True
             self._model_menu.add(item)
 
-        # Hotkey selection submenu
-        self._hotkey_menu = rumps.MenuItem("Hotkey")
-        for name, _, _ in _HOTKEY_OPTIONS:
-            item = rumps.MenuItem(name, callback=self._on_hotkey_selected)
-            if name == self._current_hotkey:
-                item.state = True
-            self._hotkey_menu.add(item)
+        # Hotkey submenus
+        self._transcript_key_menu = rumps.MenuItem("Transcript key")
+        for key_name in _HOTKEY_OPTIONS:
+            item = rumps.MenuItem(key_name, callback=self._on_transcript_key_selected)
+            item.state = key_name == self._transcript_key
+            self._transcript_key_menu.add(item)
+
+        self._agent_key_menu = rumps.MenuItem("Agent key")
+        for key_name in _HOTKEY_OPTIONS:
+            item = rumps.MenuItem(key_name, callback=self._on_agent_key_selected)
+            item.state = key_name == self._agent_key
+            self._agent_key_menu.add(item)
 
         # Bilingual toggle
         self._bilingual_item = rumps.MenuItem(
@@ -149,8 +150,8 @@ class MurmurAIApp(rumps.App):
         self.menu = [
             rumps.MenuItem("murmurai — Push-to-Talk", callback=None),
             None,  # separator
-            self._hotkey_menu,
-            rumps.MenuItem("Agent: Right Command (hold)", callback=None),
+            self._transcript_key_menu,
+            self._agent_key_menu,
             self._model_menu,
             self._bilingual_item,
             None,
@@ -165,6 +166,30 @@ class MurmurAIApp(rumps.App):
         sender.state = self._bilingual
         self.transcriber.bilingual = self._bilingual
         log.info("Bilingual mode: %s", "ON" if self._bilingual else "OFF")
+
+    def _on_transcript_key_selected(self, sender):
+        if self._is_recording or sender.title == self._transcript_key:
+            return
+        if sender.title == self._agent_key:
+            log.warning("Key already used for agent")
+            return
+        previous = self._transcript_key
+        self._transcript_key = sender.title
+        for key_name in _HOTKEY_OPTIONS:
+            self._transcript_key_menu[key_name].state = key_name == self._transcript_key
+        log.info("Transcript key changed: %s → %s", previous, self._transcript_key)
+
+    def _on_agent_key_selected(self, sender):
+        if self._is_recording or sender.title == self._agent_key:
+            return
+        if sender.title == self._transcript_key:
+            log.warning("Key already used for transcript")
+            return
+        previous = self._agent_key
+        self._agent_key = sender.title
+        for key_name in _HOTKEY_OPTIONS:
+            self._agent_key_menu[key_name].state = key_name == self._agent_key
+        log.info("Agent key changed: %s → %s", previous, self._agent_key)
 
     def _on_model_selected(self, sender):
         if sender.title == self._current_model:
@@ -195,26 +220,6 @@ class MurmurAIApp(rumps.App):
                 self.title = "🎤"
 
         threading.Thread(target=reload, daemon=True).start()
-
-    @staticmethod
-    def _get_hotkey_params(name: str) -> tuple[int, int]:
-        for hk_name, keycode, flag_mask in _HOTKEY_OPTIONS:
-            if hk_name == name:
-                return keycode, flag_mask
-        return _HOTKEY_OPTIONS[0][1], _HOTKEY_OPTIONS[0][2]
-
-    def _on_hotkey_selected(self, sender):
-        if sender.title == self._current_hotkey:
-            return
-        if self._is_recording:
-            return
-        self._current_hotkey = sender.title
-        self._hotkey_keycode, self._hotkey_flag_mask = self._get_hotkey_params(
-            self._current_hotkey
-        )
-        for name, _, _ in _HOTKEY_OPTIONS:
-            self._hotkey_menu[name].state = name == self._current_hotkey
-        log.info("Hotkey changed to %s", self._current_hotkey)
 
     def _open_logs(self, _):
         log_file = Path.home() / "Library" / "Logs" / "murmurai" / "murmurai.log"
@@ -280,10 +285,10 @@ class MurmurAIApp(rumps.App):
         self._setup_event_tap()
 
     def _setup_event_tap(self):
-        """Create the CGEventTap for the selected transcript hotkey and Right Command (agent)."""
+        """Create the CGEventTap for configurable transcript and agent keys."""
         log.info(
-            "Listening for %s (transcript) and Right Command (agent)",
-            self._current_hotkey,
+            "Listening for %s (transcript) and %s (agent)",
+            self._transcript_key, self._agent_key,
         )
 
         def callback(proxy, event_type, event, refcon):
@@ -292,20 +297,23 @@ class MurmurAIApp(rumps.App):
             )
             flags = Quartz.CGEventGetFlags(event)
 
-            if keycode == self._hotkey_keycode:
-                key_down = bool(flags & self._hotkey_flag_mask)
+            tk, tf = _HOTKEY_OPTIONS[self._transcript_key]
+            ak, af = _HOTKEY_OPTIONS[self._agent_key]
+
+            if keycode == tk:
+                key_down = bool(flags & tf)
                 if key_down and not self._is_recording:
                     self._agent_mode = False
                     self._start_recording()
                 elif not key_down and self._is_recording and not self._agent_mode:
                     self._stop_recording_and_transcribe()
 
-            elif keycode == _kVK_RightCommand:
-                cmd_down = bool(flags & _kCGEventFlagMaskCommand)
-                if cmd_down and not self._is_recording:
+            elif keycode == ak:
+                key_down = bool(flags & af)
+                if key_down and not self._is_recording:
                     self._agent_mode = True
                     self._start_recording()
-                elif not cmd_down and self._is_recording and self._agent_mode:
+                elif not key_down and self._is_recording and self._agent_mode:
                     self._stop_recording_and_transcribe()
 
             return event
@@ -376,10 +384,8 @@ class MurmurAIApp(rumps.App):
     def _start_stuck_guard(self):
         """Safety net: if key release event is lost (e.g. macOS dialog steals focus),
         stop recording after detecting the key is no longer held."""
-        expected_flag = (
-            _kCGEventFlagMaskCommand if self._agent_mode
-            else self._hotkey_flag_mask
-        )
+        key_name = self._agent_key if self._agent_mode else self._transcript_key
+        _, expected_flag = _HOTKEY_OPTIONS[key_name]
 
         def guard():
             while self._is_recording:
