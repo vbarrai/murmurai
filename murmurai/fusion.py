@@ -81,33 +81,44 @@ def fuse_transcripts(
 
 _AGENT_SYSTEM_PROMPT = (
     "You are a helpful voice assistant. "
-    "The user dictated a message using push-to-talk (mix of French and English). "
+    "The user dictated a voice instruction using push-to-talk (mix of French and English). "
     "Respond naturally in the same language the user used. "
     "If they spoke mostly French, reply in French. If English, reply in English. "
-    "If mixed, match their style. Be concise and direct."
+    "If mixed, match their style. Be concise and direct.\n"
+    "If the user provides selected text as context, apply their voice instruction to that text. "
+    "Output ONLY the result, no explanations."
 )
 
 
 def ask_agent(
     transcript: str,
     *,
+    selection: str = "",
     ollama_url: str = _DEFAULT_OLLAMA_URL,
     model: str = _DEFAULT_MODEL,
     timeout: float = 60,
 ) -> str:
-    """Send the transcript to Ollama as a user message and return the response.
+    """Send the transcript (and optional selected text) to Ollama and return the response.
 
     Falls back to the raw transcript if Ollama is unreachable.
     """
     if not transcript:
         return ""
 
+    if selection:
+        user_content = (
+            f"=== Selected text ===\n{selection}\n\n"
+            f"=== Voice instruction ===\n{transcript}"
+        )
+    else:
+        user_content = transcript
+
     payload = json.dumps({
         "model": model,
         "stream": False,
         "messages": [
             {"role": "system", "content": _AGENT_SYSTEM_PROMPT},
-            {"role": "user", "content": transcript},
+            {"role": "user", "content": user_content},
         ],
     }).encode()
 

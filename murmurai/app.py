@@ -23,7 +23,7 @@ from Quartz import (
 )
 
 from murmurai.fusion import ask_agent
-from murmurai.paster import paste_text
+from murmurai.paster import grab_selection, paste_text
 from murmurai.recorder import AudioRecorder
 from murmurai.transcriber import LocalTranscriber
 
@@ -337,7 +337,20 @@ class MurmurAIApp(rumps.App):
     def _start_recording(self):
         self._is_recording = True
         self.title = "🔴"
-        log.info("Recording started")
+
+        # In agent mode, grab the currently selected text before recording
+        self._agent_selection = ""
+        if self._agent_mode:
+            try:
+                self._agent_selection = grab_selection()
+                if self._agent_selection:
+                    log.info("Agent mode: captured selection (%d chars)", len(self._agent_selection))
+                else:
+                    log.info("Agent mode: no text selected")
+            except Exception as e:
+                log.warning("Failed to grab selection: %s", e)
+
+        log.info("Recording started (%s)", "agent" if self._agent_mode else "transcript")
 
         # Create streaming pipeline
         self._chunk_queue = queue.Queue()
@@ -404,8 +417,10 @@ class MurmurAIApp(rumps.App):
 
                 if agent_mode:
                     log.info("Transcript for agent: %s", text)
+                    if self._agent_selection:
+                        log.info("With selection: %s", self._agent_selection[:100])
                     self.title = "🤖"
-                    text = ask_agent(text)
+                    text = ask_agent(text, selection=self._agent_selection)
                     log.info("Agent response: %s", text)
 
                 paste_text(text)

@@ -29,6 +29,41 @@ def _set_clipboard(data_by_type, types):
             pb.setData_forType_(data, t)
 
 
+def grab_selection() -> str:
+    """Copy the current selection to clipboard via Cmd+C, read it, then restore.
+
+    Returns the selected text, or empty string if nothing was selected.
+    """
+    # Save current clipboard
+    saved_data, saved_types = _get_clipboard()
+
+    # Clear clipboard so we can detect if Cmd+C actually copied something
+    AppKit.NSPasteboard.generalPasteboard().clearContents()
+
+    # Simulate Cmd+C
+    subprocess.run(
+        [
+            "osascript",
+            "-e",
+            'tell application "System Events" to keystroke "c" using command down',
+        ],
+        check=True,
+    )
+    time.sleep(0.15)
+
+    # Read what was copied
+    pb = AppKit.NSPasteboard.generalPasteboard()
+    selection = pb.stringForType_(AppKit.NSPasteboardTypeString) or ""
+
+    # Restore original clipboard
+    if saved_data is not None:
+        _set_clipboard(saved_data, saved_types)
+    else:
+        pb.clearContents()
+
+    return selection.strip()
+
+
 def paste_text(text: str):
     """Paste text at the current cursor position, preserving the clipboard."""
     # Save current clipboard
