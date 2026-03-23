@@ -114,6 +114,8 @@ class MurmurAIApp(rumps.App):
             rumps.MenuItem("Hotkey: Right Option (hold)", callback=None),
             self._model_menu,
             None,
+            rumps.MenuItem("Open Logs…", callback=self._open_logs),
+            None,
         ]
 
     def _on_model_selected(self, sender):
@@ -143,6 +145,10 @@ class MurmurAIApp(rumps.App):
                 self.title = "🎤"
 
         threading.Thread(target=reload, daemon=True).start()
+
+    def _open_logs(self, _):
+        log_file = Path.home() / "Library" / "Logs" / "murmurai" / "murmurai.log"
+        subprocess.Popen(["open", str(log_file)])
 
     @rumps.timer(1)
     def _check_pending_quit(self, _):
