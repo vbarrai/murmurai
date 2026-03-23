@@ -77,3 +77,56 @@ def fuse_transcripts(
     except (URLError, OSError, json.JSONDecodeError, KeyError) as exc:
         log.warning("Ollama fusion failed (%s), falling back to FR transcript", exc)
         return transcript_fr
+
+
+_AGENT_SYSTEM_PROMPT = (
+    "You are a helpful voice assistant. "
+    "The user dictated a message using push-to-talk (mix of French and English). "
+    "Respond naturally in the same language the user used. "
+    "If they spoke mostly French, reply in French. If English, reply in English. "
+    "If mixed, match their style. Be concise and direct."
+)
+
+
+def ask_agent(
+    transcript: str,
+    *,
+    ollama_url: str = _DEFAULT_OLLAMA_URL,
+    model: str = _DEFAULT_MODEL,
+    timeout: float = 60,
+) -> str:
+    """Send the transcript to Ollama as a user message and return the response.
+
+    Falls back to the raw transcript if Ollama is unreachable.
+    """
+    if not transcript:
+        return ""
+
+    payload = json.dumps({
+        "model": model,
+        "stream": False,
+        "messages": [
+            {"role": "system", "content": _AGENT_SYSTEM_PROMPT},
+            {"role": "user", "content": transcript},
+        ],
+    }).encode()
+
+    req = Request(
+        f"{ollama_url}/api/chat",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+        result = data.get("message", {}).get("content", "").strip()
+        if result:
+            log.info("Ollama agent response: %s", result)
+            return result
+        log.warning("Ollama agent returned empty content, falling back to transcript")
+        return transcript
+    except (URLError, OSError, json.JSONDecodeError, KeyError) as exc:
+        log.warning("Ollama agent failed (%s), falling back to transcript", exc)
+        return transcript

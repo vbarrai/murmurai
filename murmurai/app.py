@@ -22,19 +22,20 @@ from Quartz import (
     kCFRunLoopCommonModes,
 )
 
+from murmurai.fusion import ask_agent
 from murmurai.paster import paste_text
 from murmurai.recorder import AudioRecorder
 from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
 
-# Hotkey options: each entry maps a display name to (keycode, flag_mask)
+# Hotkey options for transcript mode (keycode, flag_mask)
+# Right Command is reserved for agent mode
 _HOTKEY_OPTIONS = [
     ("Right Option",  0x3D, 0x00080000),
     ("Left Option",   0x3A, 0x00080000),
     ("Right Control", 0x3E, 0x00040000),
     ("Left Control",  0x3B, 0x00040000),
-    ("Right Command", 0x36, 0x00100000),
     ("Left Command",  0x37, 0x00100000),
     ("Right Shift",   0x3C, 0x00020000),
     ("Left Shift",    0x38, 0x00020000),
@@ -43,6 +44,9 @@ _HOTKEY_OPTIONS = [
 ]
 _DEFAULT_HOTKEY = "Right Option"
 
+# Right Command is fixed for agent mode
+_kVK_RightCommand = 0x36
+_kCGEventFlagMaskCommand = 0x00100000
 
 
 def _check_accessibility() -> bool:
@@ -116,6 +120,7 @@ class MurmurAIApp(rumps.App):
         )
         log.info("Model loaded, ready.")
         self._is_recording = False
+        self._agent_mode = False
         self._pending_quit = False
 
         # Model selection submenu
@@ -145,6 +150,7 @@ class MurmurAIApp(rumps.App):
             rumps.MenuItem("murmurai — Push-to-Talk", callback=None),
             None,  # separator
             self._hotkey_menu,
+            rumps.MenuItem("Agent: Right Command (hold)", callback=None),
             self._model_menu,
             self._bilingual_item,
             None,
@@ -274,8 +280,11 @@ class MurmurAIApp(rumps.App):
         self._setup_event_tap()
 
     def _setup_event_tap(self):
-        """Create the CGEventTap for the selected hotkey."""
-        log.info("Listening for %s key (hold to record)", self._current_hotkey)
+        """Create the CGEventTap for the selected transcript hotkey and Right Command (agent)."""
+        log.info(
+            "Listening for %s (transcript) and Right Command (agent)",
+            self._current_hotkey,
+        )
 
         def callback(proxy, event_type, event, refcon):
             keycode = Quartz.CGEventGetIntegerValueField(
@@ -286,8 +295,17 @@ class MurmurAIApp(rumps.App):
             if keycode == self._hotkey_keycode:
                 key_down = bool(flags & self._hotkey_flag_mask)
                 if key_down and not self._is_recording:
+                    self._agent_mode = False
                     self._start_recording()
-                elif not key_down and self._is_recording:
+                elif not key_down and self._is_recording and not self._agent_mode:
+                    self._stop_recording_and_transcribe()
+
+            elif keycode == _kVK_RightCommand:
+                cmd_down = bool(flags & _kCGEventFlagMaskCommand)
+                if cmd_down and not self._is_recording:
+                    self._agent_mode = True
+                    self._start_recording()
+                elif not cmd_down and self._is_recording and self._agent_mode:
                     self._stop_recording_and_transcribe()
 
             return event
@@ -345,13 +363,18 @@ class MurmurAIApp(rumps.App):
     def _start_stuck_guard(self):
         """Safety net: if key release event is lost (e.g. macOS dialog steals focus),
         stop recording after detecting the key is no longer held."""
+        expected_flag = (
+            _kCGEventFlagMaskCommand if self._agent_mode
+            else self._hotkey_flag_mask
+        )
+
         def guard():
             while self._is_recording:
                 time.sleep(0.5)
                 flags = Quartz.CGEventSourceFlagsState(
                     Quartz.kCGEventSourceStateHIDSystemState
                 )
-                key_held = bool(flags & self._hotkey_flag_mask)
+                key_held = bool(flags & expected_flag)
                 if not key_held and self._is_recording:
                     log.info("Stuck recording detected, stopping")
                     self._stop_recording_and_transcribe()
@@ -360,8 +383,12 @@ class MurmurAIApp(rumps.App):
 
     def _stop_recording_and_transcribe(self):
         self._is_recording = False
-        self.title = "⏳"
-        log.info("Recording stopped, finalizing transcription...")
+        agent_mode = self._agent_mode
+        self.title = "🤖" if agent_mode else "⏳"
+        log.info(
+            "Recording stopped, %s...",
+            "sending to agent" if agent_mode else "finalizing transcription",
+        )
 
         # Stop recording — flushes remaining audio + sentinel to queue
         self.recorder.stop()
@@ -371,12 +398,18 @@ class MurmurAIApp(rumps.App):
                 # Wait for transcription thread to finish processing all chunks
                 self._transcribe_thread.join(timeout=15)
                 text = self._transcript_result.strip()
-                if text:
-                    log.info("Final transcription: %s", text)
-                    paste_text(text)
-                    log.info("Text pasted to cursor")
-                else:
+                if not text:
                     log.info("No transcription result")
+                    return
+
+                if agent_mode:
+                    log.info("Transcript for agent: %s", text)
+                    self.title = "🤖"
+                    text = ask_agent(text)
+                    log.info("Agent response: %s", text)
+
+                paste_text(text)
+                log.info("Text pasted to cursor")
             except Exception as e:
                 log.error("Finalization failed: %s", e)
                 rumps.notification("murmurai", "Error", str(e))
