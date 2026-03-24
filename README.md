@@ -2,13 +2,13 @@
 
 Push-to-talk voice transcription and AI assistant for macOS. Hold a key, speak, release — your speech is transcribed locally and pasted at the cursor. With a second key, the transcript is sent to a local AI agent that can answer questions or act on selected text.
 
-Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline transcription and [Ollama](https://ollama.com) for bilingual fusion and AI agent features. No cloud API needed.
+Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline transcription and [Ollama](https://ollama.com) for AI agent features. No cloud API needed.
 
 ## Features
 
 - **Push-to-talk transcription** — hold a key, speak, release to paste
-- **Bilingual FR/EN** — transcribes in both French and English in parallel, then fuses the results via Ollama to keep French sentence structure with English technical jargon intact
-- **Technical jargon detection** — a configurable list of technical terms (commit, push, deploy, API, etc.) ensures they stay in English instead of being "frenchified" by Whisper
+- **Bilingual FR/EN** — transcribes in both French and English in parallel, then fuses the results locally to keep French sentence structure with English technical jargon intact
+- **Technical jargon** — built-in dictionary of ~100 technical terms with their French variants, extensible via config; fusion is instant (no LLM needed)
 - **AI agent mode** — hold a second key to send your voice instruction (+ any selected text) to Ollama; the AI response replaces the selected text
 - **Fully local** — no cloud, no API key, everything runs on your machine
 - **Configurable hotkeys** — choose your preferred keys from the menu bar
@@ -30,15 +30,17 @@ pip install -e .
 
 The Whisper model (~500 Mo for `small`) is downloaded automatically at first launch.
 
-### Ollama (required for bilingual mode and agent)
+### Ollama (optional, for agent mode only)
+
+Ollama is only needed if you want to use agent mode. Bilingual transcription works without it.
 
 Install [Ollama](https://ollama.com), then pull a model:
 
 ```bash
-ollama pull gpt-oss:20b   # for agent mode (or any model you prefer)
+ollama pull gpt-oss:20b   # or any model you prefer
 ```
 
-Make sure Ollama is running (`ollama serve`) before using murmurai.
+Make sure Ollama is running (`ollama serve`) before using agent mode.
 
 ## macOS permissions
 
@@ -158,17 +160,58 @@ Ollama is only needed for **agent mode**. Bilingual fusion is now done locally w
 
 ### Technical jargon
 
-murmurai ships with a built-in dictionary of ~100 technical terms and their French-ified variants (e.g. "commit" → ["commettre", "commiter"]). When bilingual mode is on, the fusion replaces these French variants with the English original — instantly, no LLM needed.
+#### The problem
 
-To add your own terms, edit the `"jargon"` dict in `~/.config/murmurai/config.json`:
+When you speak French with English technical terms, Whisper tends to "frenchify" them:
+
+| You say | Whisper transcribes (FR) |
+|---|---|
+| "commit" | "commettre" |
+| "push" | "pousser" |
+| "merge" | "fusionner" |
+| "debug" | "déboguer" |
+| "deploy" | "déployer" |
+
+#### How it works
+
+With bilingual mode on, murmurai transcribes the same audio in both French and English in parallel. It then **fuses** the two transcripts locally:
+
+1. Start from the French transcript (correct sentence structure)
+2. Look at the English transcript to identify which technical terms were spoken
+3. Replace the frenchified words with their English originals
+
+This fusion is **instant** — it's a simple dictionary lookup, no LLM call.
+
+#### Built-in vs user jargon
+
+murmurai uses two layers of jargon:
+
+- **Built-in** (`murmurai/jargon.py`) — ~100 terms covering Git, DevOps, code, testing, tools, etc. Updated with the app on each new version.
+- **User** (`~/.config/murmurai/config.json`) — your custom additions, merged on top of the built-in dictionary.
+
+The merge works as follows:
+- New terms in user jargon are added to the dictionary
+- If a term already exists in built-in, user variants are appended (no duplicates)
+- Built-in terms are never removed by user config
+
+This means app updates can add new terms without overwriting your custom entries.
+
+#### Adding custom jargon
+
+Edit the `"jargon"` dict in `~/.config/murmurai/config.json` (accessible from the menu: **Edit Settings…**):
 
 ```json
 {
   "jargon": {
-    "kubectl": ["kubecétéèle"],
-    "terraform": ["terraformer"]
+    "kubectl": ["kubecétéèle", "kubeucétéèle"],
+    "terraform": ["terraformer"],
+    "Datadog": ["datadogue"]
   }
 }
 ```
 
-User jargon is **merged on top** of the built-in dictionary. App updates add new built-in terms without overwriting your custom entries.
+Each entry maps an **English term** (the correct form to keep) to a list of **French variants** that Whisper might produce. The matching is case-insensitive.
+
+#### Legacy format
+
+If your config still has the old list format (`"jargon": ["commit", "push", ...]`), it will still work — each term is added with an empty variant list. But the new dict format is recommended for better fusion accuracy.
