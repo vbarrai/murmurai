@@ -26,6 +26,7 @@ class LocalTranscriber:
         self.bilingual = bilingual
         self.fusion_model: Optional[str] = None
         self.on_status: Optional[callable] = None
+        self.on_text: Optional[callable] = None  # called with partial text during transcription
         self._model_size = model_size
         self._device = device
         self._model = WhisperModel(model_size, device=device, compute_type="int8")
@@ -35,17 +36,10 @@ class LocalTranscriber:
     def transcribe(self, audio_path: Path) -> str:
         if self.bilingual:
             return self._transcribe_bilingual_from_file(audio_path)
-        segments, _ = self._model.transcribe(
-            str(audio_path),
-            language=self.language or "fr",
-            beam_size=1,
-            vad_filter=True,
-            condition_on_previous_text=False,
-        )
-        return " ".join(segment.text.strip() for segment in segments)
+        return self._transcribe_single(audio_path)
 
-    def _transcribe_bilingual_from_file(self, audio_path: Path) -> str:
-        """Transcribe file in both FR and EN in parallel, then fuse."""
+    def transcribe_bilingual_raw(self, audio_path: Path) -> tuple[str, str]:
+        """Return (text_fr, text_en) without fusion. For agent mode."""
         if self._model2 is None:
             log.info("Loading second Whisper model for parallel bilingual...")
             self._model2 = WhisperModel(
@@ -54,24 +48,56 @@ class LocalTranscriber:
 
         if self.on_status:
             self.on_status("Transcription FR + EN…")
-        log.info("Bilingual transcription: running FR + EN passes in parallel...")
+        log.info("Bilingual transcription (raw): running FR + EN passes in parallel...")
         path_str = str(audio_path)
 
-        def run(model, lang):
+        def run_fr(model):
             segments, _ = model.transcribe(
-                path_str, language=lang, beam_size=1,
+                path_str, language="fr", beam_size=1,
+                vad_filter=True, condition_on_previous_text=False,
+            )
+            parts = []
+            for s in segments:
+                parts.append(s.text.strip())
+                if self.on_text:
+                    self.on_text(" ".join(parts))
+            return " ".join(parts)
+
+        def run_en(model):
+            segments, _ = model.transcribe(
+                path_str, language="en", beam_size=1,
                 vad_filter=True, condition_on_previous_text=False,
             )
             return " ".join(s.text.strip() for s in segments)
 
         with ThreadPoolExecutor(max_workers=2) as pool:
-            future_fr = pool.submit(run, self._model, "fr")
-            future_en = pool.submit(run, self._model2, "en")
+            future_fr = pool.submit(run_fr, self._model)
+            future_en = pool.submit(run_en, self._model2)
             text_fr = future_fr.result()
             text_en = future_en.result()
 
         log.info("Transcript FR: %s", text_fr)
         log.info("Transcript EN: %s", text_en)
+        return text_fr, text_en
+
+    def _transcribe_single(self, audio_path: Path) -> str:
+        segments, _ = self._model.transcribe(
+            str(audio_path),
+            language=self.language or "fr",
+            beam_size=1,
+            vad_filter=True,
+            condition_on_previous_text=False,
+        )
+        parts = []
+        for segment in segments:
+            parts.append(segment.text.strip())
+            if self.on_text:
+                self.on_text(" ".join(parts))
+        return " ".join(parts)
+
+    def _transcribe_bilingual_from_file(self, audio_path: Path) -> str:
+        """Transcribe file in both FR and EN in parallel, then fuse."""
+        text_fr, text_en = self.transcribe_bilingual_raw(audio_path)
 
         if self.on_status:
             self.on_status("Fusion FR/EN…")

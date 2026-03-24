@@ -22,7 +22,7 @@ from Quartz import (
 )
 
 import murmurai.config as cfg
-from murmurai.fusion import ask_agent, _DEFAULT_OLLAMA_URL
+from murmurai.fusion import ask_agent, ask_agent_bilingual, _DEFAULT_OLLAMA_URL
 from murmurai.hud import HUDOverlay
 from murmurai.paster import grab_selection, paste_text, replace_text
 from murmurai.recorder import AudioRecorder
@@ -135,6 +135,7 @@ class MurmurAIApp(rumps.App):
         )
         self.transcriber.fusion_model = self._fusion_model
         self.transcriber.on_status = lambda msg: self._hud.update(msg)
+        self.transcriber.on_text = lambda text: self._hud.update("Transcription…", text)
         log.info("Model loaded, ready.")
         self._is_recording = False
         self._agent_mode = False
@@ -361,6 +362,7 @@ class MurmurAIApp(rumps.App):
                 )
                 self.transcriber.fusion_model = self._fusion_model
                 self.transcriber.on_status = lambda msg: self._hud.update(msg)
+                self.transcriber.on_text = lambda text: self._hud.update("Transcription…", text)
                 log.info("Model %s loaded.", self._current_model)
                 self._save_config()
             except Exception as e:
@@ -507,6 +509,7 @@ class MurmurAIApp(rumps.App):
     def _start_recording(self):
         self._is_recording = True
         self.title = "🔴"
+        self._hud.show("🎙 Recording…" if not self._agent_mode else "🎙 Recording (agent)…")
 
         # In agent mode, grab the currently selected text via Accessibility API
         self._agent_selection = ""
@@ -563,25 +566,31 @@ class MurmurAIApp(rumps.App):
                     log.info("No audio recorded")
                     return
 
-                self._hud.show("Transcription…")
-                text = self.transcriber.transcribe(audio_path).strip()
-                log.info("Transcript: %s", text)
+                self._hud.update("Transcription…")
 
-                # Clean up temp file
-                audio_path.unlink(missing_ok=True)
+                if agent_mode and self._bilingual:
+                    # Agent + bilingual: skip fusion, send both transcripts
+                    # to agent in a single Ollama call
+                    text_fr, text_en = self.transcriber.transcribe_bilingual_raw(
+                        audio_path,
+                    )
+                    audio_path.unlink(missing_ok=True)
 
-                if not text:
-                    log.info("No transcription result")
-                    return
+                    if not text_fr and not text_en:
+                        log.info("No transcription result")
+                        return
 
-                if agent_mode:
-                    log.info("Transcript for agent: %s", text)
                     if self._agent_selection:
                         log.info("With selection: %s", self._agent_selection[:100])
-                    self._hud.update("Agent…")
+                    detail = ""
+                    if self._agent_selection:
+                        detail += f"📄 {self._agent_selection[:60]}\n"
+                    detail += f"🎙 {text_fr[:60]}"
+                    self._hud.update("Agent…", detail)
                     self.title = "🤖"
-                    response = ask_agent(
-                        text, selection=self._agent_selection,
+                    response = ask_agent_bilingual(
+                        text_fr, text_en,
+                        selection=self._agent_selection,
                         model=self._agent_model,
                     )
                     log.info("Agent response: %s", response)
@@ -590,9 +599,38 @@ class MurmurAIApp(rumps.App):
                         replace_text(self._agent_selection, response)
                     else:
                         paste_text(response)
-                    text = response
                 else:
-                    paste_text(text)
+                    # Transcript mode (with optional fusion) or agent without bilingual
+                    text = self.transcriber.transcribe(audio_path).strip()
+                    log.info("Transcript: %s", text)
+                    audio_path.unlink(missing_ok=True)
+
+                    if not text:
+                        log.info("No transcription result")
+                        return
+
+                    if agent_mode:
+                        if self._agent_selection:
+                            log.info("With selection: %s", self._agent_selection[:100])
+                        detail = ""
+                        if self._agent_selection:
+                            detail += f"📄 {self._agent_selection[:60]}\n"
+                        detail += f"🎙 {text[:60]}"
+                        self._hud.update("Agent…", detail)
+                        self.title = "🤖"
+                        response = ask_agent(
+                            text, selection=self._agent_selection,
+                            model=self._agent_model,
+                        )
+                        log.info("Agent response: %s", response)
+
+                        if self._agent_selection:
+                            replace_text(self._agent_selection, response)
+                        else:
+                            paste_text(response)
+                    else:
+                        paste_text(text)
+
                 log.info("Text pasted to cursor")
             except Exception as e:
                 log.error("Finalization failed: %s", e)

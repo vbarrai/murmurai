@@ -15,7 +15,7 @@ _DEFAULTS = {
     "bilingual": True,
     "transcript_key": "Right Option",
     "agent_key": "Right Command",
-    "fusion_model": "qwen2.5-coder:7b",
+    "fusion_model": "qwen2.5-coder:0.5b",
     "agent_model": "gpt-oss:20b",
     "jargon": [
         # Git / version control
