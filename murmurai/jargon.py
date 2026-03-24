@@ -17,8 +17,8 @@ log = logging.getLogger("murmurai")
 # Lowercase variants are matched case-insensitively.
 BUILTIN_JARGON: dict[str, list[str]] = {
     # Git / version control
-    "commit": ["commettre", "commiter", "comité", "commette"],
-    "push": ["pousser", "poucher", "pousse"],
+    "commit": ["commettre", "commiter", "comité", "comite", "commette"],
+    "push": ["pousser", "poucher", "pouche", "pousse"],
     "pull": ["tirer", "puller"],
     "merge": ["fusionner", "merger", "fusion"],
     "rebase": ["rebaser"],
@@ -131,6 +131,7 @@ BUILTIN_JARGON: dict[str, list[str]] = {
     "Confluence": [],
     "Notion": [],
     "Figma": [],
+    "README": ["rythmi", "rythme y", "read me", "lisez-moi"],
     # Agile / project
     "scrum": [],
     "kanban": [],

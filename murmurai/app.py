@@ -133,7 +133,9 @@ class MurmurAIApp(rumps.App):
             model_size=self._current_model, bilingual=self._bilingual,
         )
         self.transcriber.on_status = lambda msg: self._hud.update(msg)
-        self.transcriber.on_text = lambda text: self._hud.update("Transcription…", text)
+        self.transcriber.on_text = lambda text: self._hud.update(
+            f"Transcription… ({self._current_model})", text,
+        )
         log.info("Model loaded, ready.")
         self._is_recording = False
         self._agent_mode = False
@@ -334,7 +336,9 @@ class MurmurAIApp(rumps.App):
                     model_size=self._current_model, bilingual=self._bilingual,
                 )
                 self.transcriber.on_status = lambda msg: self._hud.update(msg)
-                self.transcriber.on_text = lambda text: self._hud.update("Transcription…", text)
+                self.transcriber.on_text = lambda text: self._hud.update(
+                    f"Transcription… ({self._current_model})", text,
+                )
                 log.info("Model %s loaded.", self._current_model)
                 self._save_config()
             except Exception as e:
@@ -558,7 +562,7 @@ class MurmurAIApp(rumps.App):
                     if self._agent_selection:
                         detail += f"📄 {self._agent_selection[:60]}\n"
                     detail += f"🎙 {text_fr[:60]}"
-                    self._hud.update("Agent…", detail)
+                    self._hud.update(f"Agent… ({self._agent_model})", detail)
                     self.title = "🤖"
                     response = ask_agent_bilingual(
                         text_fr, text_en,
@@ -588,7 +592,7 @@ class MurmurAIApp(rumps.App):
                         if self._agent_selection:
                             detail += f"📄 {self._agent_selection[:60]}\n"
                         detail += f"🎙 {text[:60]}"
-                        self._hud.update("Agent…", detail)
+                        self._hud.update(f"Agent… ({self._agent_model})", detail)
                         self.title = "🤖"
                         response = ask_agent(
                             text, selection=self._agent_selection,

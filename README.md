@@ -10,8 +10,9 @@ Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline tra
 - **Bilingual FR/EN** — transcribes in both French and English in parallel, then fuses the results locally to keep French sentence structure with English technical jargon intact
 - **Technical jargon** — built-in dictionary of ~100 technical terms with their French variants, extensible via config; fusion is instant (no LLM needed)
 - **AI agent mode** — hold a second key to send your voice instruction (+ any selected text) to Ollama; the AI response replaces the selected text
-- **Fully local** — no cloud, no API key, everything runs on your machine
-- **Configurable hotkeys** — choose your preferred keys from the menu bar
+- **HUD overlay** — real-time status display showing current step, transcription text, and agent context
+- **Fully local** — no cloud, no API key; transcription and fusion run entirely on your machine (Ollama only needed for agent mode)
+- **Configurable** — hotkeys, Whisper model, agent model, and jargon list all editable from the menu bar or config file
 
 ## Installation
 
@@ -152,7 +153,9 @@ Click the menu bar icon to access:
 - **Bilingual FR/EN** — toggle bilingual transcription on/off
 - **Ollama status** — shows connection status (click to refresh)
 - **Agent model** — select the Ollama model for agent responses
-- **↻ Refresh Ollama** — re-check Ollama connection and refresh model list
+- **↻ Refresh Ollama** — re-check connection and refresh model list
+- **Edit Settings…** — open `config.json` in your default editor
+- **Open Logs…** — open the log file
 
 ## Development
 

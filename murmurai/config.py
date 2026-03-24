@@ -16,10 +16,12 @@ _DEFAULTS = {
     "transcript_key": "Right Option",
     "agent_key": "Right Command",
     "agent_model": "gpt-oss:20b",
-    # User jargon: additional terms or overrides merged on top of built-in jargon.
+    # User jargon: additional terms merged on top of built-in jargon.
     # Format: {"english_term": ["french_variant1", "french_variant2"]}
-    # Example: {"kubectl": ["kubecétéèle"], "terraform": ["terraformer"]}
-    "jargon": {},
+    "jargon": {
+        "kubectl": ["kubecétéèle", "kubeucétéèle"],
+        "terraform": ["terraformer"],
+    },
 }
 
 
