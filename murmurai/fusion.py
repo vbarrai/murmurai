@@ -11,22 +11,23 @@ log = logging.getLogger("murmurai")
 
 _DEFAULT_OLLAMA_URL = "http://localhost:11434"
 _DEFAULT_MODEL = "gpt-oss:20b"
+_DEFAULT_FUSION_MODEL = "qwen2.5-coder:7b"
 
 _SYSTEM_PROMPT = (
-    "You are a bilingual transcript merger. "
-    "The user spoke in a mix of French and English. "
-    "You receive two transcriptions of the SAME audio: one forced in French, one forced in English. "
-    "Your job is to produce the single best transcript that keeps each segment in its original language. "
+    "You merge two transcriptions of the SAME audio into one.\n"
+    "The speaker speaks FRENCH but uses ENGLISH technical terms.\n"
+    "You receive: one transcript forced in French, one forced in English.\n\n"
     "Rules:\n"
-    "- Keep French parts in French and English parts in English.\n"
-    "- Fix obvious transcription errors by cross-referencing both versions.\n"
-    "- Do NOT translate anything. Preserve the speaker's language choices.\n"
-    "- Technical terms commonly used in English even by French speakers must stay in English. "
-    "Use the English transcript to detect them. "
-    "Examples: commit, push, pull, merge, deploy, debug, refactor, build, release, sprint, "
-    "feature, bug, issue, branch, tag, review, test, API, endpoint, frontend, backend, database, "
-    "cloud, server, docker, container, pipeline, etc.\n"
-    "- Output ONLY the merged transcript, nothing else.\n"
+    "- The output sentence structure MUST be in French.\n"
+    "- Replace French-ified technical words with their English original from the EN transcript.\n"
+    "- Examples: 'commettre' → 'commit', 'poucher/pousser' → 'push', 'tirer' → 'pull', "
+    "'fusionner' → 'merge', 'déployer' → 'deploy', 'débugger' → 'debug', etc.\n"
+    "- Do NOT translate the whole sentence to English. Keep French grammar and French words.\n"
+    "- Output ONLY the merged sentence, nothing else.\n\n"
+    "Example:\n"
+    "FR: Est-ce que tu peux commettre et pousser les modifications ?\n"
+    "EN: Can you commit and push the modifications?\n"
+    "Output: Est-ce que tu peux commit et push les modifications ?\n"
 )
 
 
@@ -35,7 +36,7 @@ def fuse_transcripts(
     transcript_en: str,
     *,
     ollama_url: str = _DEFAULT_OLLAMA_URL,
-    model: str = _DEFAULT_MODEL,
+    model: str = _DEFAULT_FUSION_MODEL,
     timeout: float = 30,
 ) -> str:
     """Merge a French and English transcript using Ollama.

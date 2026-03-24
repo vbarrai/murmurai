@@ -1,6 +1,5 @@
 import logging
 import multiprocessing
-import queue
 import subprocess
 import threading
 import time
@@ -360,25 +359,8 @@ class MurmurAIApp(rumps.App):
 
         log.info("Recording started (%s)", "agent" if self._agent_mode else "transcript")
 
-        # Create streaming pipeline
-        self._chunk_queue = queue.Queue()
-        self._transcript_result = ""
-
-        # Start transcription consumer thread (processes chunks as they arrive)
-        def consume():
-            try:
-                self._transcript_result = self.transcriber.transcribe_stream(
-                    self._chunk_queue
-                )
-            except Exception as e:
-                log.error("Streaming transcription failed: %s", e)
-                self._transcript_result = ""
-
-        self._transcribe_thread = threading.Thread(target=consume, daemon=True)
-        self._transcribe_thread.start()
-
-        # Start recording with chunk streaming
-        self.recorder.start(chunk_queue=self._chunk_queue)
+        # Record without streaming — transcribe once at the end
+        self.recorder.start()
         self._start_stuck_guard()
 
     def _start_stuck_guard(self):
@@ -409,14 +391,21 @@ class MurmurAIApp(rumps.App):
             "sending to agent" if agent_mode else "finalizing transcription",
         )
 
-        # Stop recording — flushes remaining audio + sentinel to queue
-        self.recorder.stop()
+        # Stop recording — returns a WAV file path
+        audio_path = self.recorder.stop()
 
         def finalize():
             try:
-                # Wait for transcription thread to finish processing all chunks
-                self._transcribe_thread.join(timeout=15)
-                text = self._transcript_result.strip()
+                if not audio_path:
+                    log.info("No audio recorded")
+                    return
+
+                text = self.transcriber.transcribe(audio_path).strip()
+                log.info("Transcript: %s", text)
+
+                # Clean up temp file
+                audio_path.unlink(missing_ok=True)
+
                 if not text:
                     log.info("No transcription result")
                     return
