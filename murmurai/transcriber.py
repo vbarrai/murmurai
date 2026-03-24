@@ -24,6 +24,7 @@ class LocalTranscriber:
     ):
         self.language = language
         self.bilingual = bilingual
+        self.fusion_model: Optional[str] = None
         self._model_size = model_size
         self._device = device
         self._model = WhisperModel(model_size, device=device, compute_type="int8")
@@ -70,5 +71,8 @@ class LocalTranscriber:
         log.info("Transcript EN: %s", text_en)
 
         log.info("Fusing transcripts via Ollama...")
-        return fuse_transcripts(text_fr, text_en)
+        kwargs = {}
+        if self.fusion_model:
+            kwargs["model"] = self.fusion_model
+        return fuse_transcripts(text_fr, text_en, **kwargs)
 
