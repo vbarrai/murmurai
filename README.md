@@ -16,20 +16,21 @@ Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline tra
 
 ## Installation
 
-```bash
-# Clone the repo
-git clone https://github.com/vbarrai/murmurai.git
-cd murmurai
+### DMG (recommended)
 
-# Create a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install
-pip install -e .
-```
+Download the latest `.dmg` from [Releases](https://github.com/vbarrai/murmurai/releases), open it, and drag **murmurai** into your Applications folder.
 
 The Whisper model (~500 Mo for `small`) is downloaded automatically at first launch.
+
+### From source
+
+```bash
+git clone https://github.com/vbarrai/murmurai.git
+cd murmurai
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
 
 ### Ollama (optional, for agent mode only)
 
