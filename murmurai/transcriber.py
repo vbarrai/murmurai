@@ -25,6 +25,7 @@ class LocalTranscriber:
         self.language = language
         self.bilingual = bilingual
         self.fusion_model: Optional[str] = None
+        self.on_status: Optional[callable] = None
         self._model_size = model_size
         self._device = device
         self._model = WhisperModel(model_size, device=device, compute_type="int8")
@@ -51,6 +52,8 @@ class LocalTranscriber:
                 self._model_size, device=self._device, compute_type="int8",
             )
 
+        if self.on_status:
+            self.on_status("Transcription FR + EN…")
         log.info("Bilingual transcription: running FR + EN passes in parallel...")
         path_str = str(audio_path)
 
@@ -70,6 +73,8 @@ class LocalTranscriber:
         log.info("Transcript FR: %s", text_fr)
         log.info("Transcript EN: %s", text_en)
 
+        if self.on_status:
+            self.on_status("Fusion FR/EN…")
         log.info("Fusing transcripts via Ollama...")
         kwargs = {}
         if self.fusion_model:

@@ -23,6 +23,7 @@ from Quartz import (
 
 import murmurai.config as cfg
 from murmurai.fusion import ask_agent, _DEFAULT_OLLAMA_URL
+from murmurai.hud import HUDOverlay
 from murmurai.paster import grab_selection, paste_text, replace_text
 from murmurai.recorder import AudioRecorder
 from murmurai.transcriber import LocalTranscriber
@@ -133,10 +134,12 @@ class MurmurAIApp(rumps.App):
             model_size=self._current_model, bilingual=self._bilingual,
         )
         self.transcriber.fusion_model = self._fusion_model
+        self.transcriber.on_status = lambda msg: self._hud.update(msg)
         log.info("Model loaded, ready.")
         self._is_recording = False
         self._agent_mode = False
         self._ollama_connected = False
+        self._hud = HUDOverlay()
         self._pending_quit = False
 
         # Model selection submenu
@@ -357,6 +360,7 @@ class MurmurAIApp(rumps.App):
                     model_size=self._current_model, bilingual=self._bilingual,
                 )
                 self.transcriber.fusion_model = self._fusion_model
+                self.transcriber.on_status = lambda msg: self._hud.update(msg)
                 log.info("Model %s loaded.", self._current_model)
                 self._save_config()
             except Exception as e:
@@ -559,6 +563,7 @@ class MurmurAIApp(rumps.App):
                     log.info("No audio recorded")
                     return
 
+                self._hud.show("Transcription…")
                 text = self.transcriber.transcribe(audio_path).strip()
                 log.info("Transcript: %s", text)
 
@@ -573,6 +578,7 @@ class MurmurAIApp(rumps.App):
                     log.info("Transcript for agent: %s", text)
                     if self._agent_selection:
                         log.info("With selection: %s", self._agent_selection[:100])
+                    self._hud.update("Agent…")
                     self.title = "🤖"
                     response = ask_agent(
                         text, selection=self._agent_selection,
@@ -592,6 +598,7 @@ class MurmurAIApp(rumps.App):
                 log.error("Finalization failed: %s", e)
                 rumps.notification("murmurai", "Error", str(e))
             finally:
+                self._hud.hide()
                 self.title = "🎤"
 
         threading.Thread(target=finalize, daemon=True).start()
