@@ -63,20 +63,84 @@ murmurai
 
 | Mode | Default key | What it does |
 |---|---|---|
-| **Transcript** | Right Option (hold) | Records → bilingual transcript → pasted at cursor |
-| **Agent** | Right Command (hold) | Records → bilingual transcript + selected text → sent to Ollama → AI response pasted |
+| **Transcript** | Right Option (hold) | Records → transcription → pasted at cursor |
+| **Agent** | Right Command (hold) | Records → transcription + selected text → AI agent → response pasted |
 
-### Agent mode examples
+### Transcript mode
+
+Hold the transcript key, speak, release. Your speech is transcribed locally by Whisper and pasted at the cursor position.
+
+**Pipeline:**
+
+```
+Audio → Whisper (FR) → Text pasted
+```
+
+With **bilingual mode** enabled, the pipeline becomes:
+
+```
+Audio → Whisper (FR) + Whisper (EN) in parallel → Local fusion → Text pasted
+```
+
+The two Whisper passes run in parallel on separate model instances. The local fusion then replaces frenchified technical terms using the jargon dictionary — this step is instant (no network call).
+
+A HUD overlay shows the current step and the text being transcribed in real-time.
+
+### Fusion
+
+The fusion step combines the French and English transcripts into a single result:
+
+1. **Start from the French transcript** — it has the correct sentence structure
+2. **Cross-reference with the English transcript** — identify which words were actually spoken in English
+3. **Replace frenchified terms** — using the jargon dictionary (built-in + user entries)
+
+Example:
+
+| | Transcript |
+|---|---|
+| Whisper FR | "Est-ce que tu peux **commettre** et **pousser** les modifications ?" |
+| Whisper EN | "Can you **commit** and **push** the modifications?" |
+| After fusion | "Est-ce que tu peux **commit** et **push** les modifications ?" |
+
+The fusion is purely local (regex-based dictionary lookup). It does not require Ollama or any network access. When bilingual mode is off, Whisper runs a single French pass and no fusion occurs.
+
+### Agent mode
+
+Hold the agent key, speak, release. Your voice instruction is transcribed and sent to a local Ollama model along with any text you had selected on screen.
+
+**Pipeline (with bilingual):**
+
+```
+Audio → Whisper (FR) + Whisper (EN) in parallel → Both transcripts + selected text → Ollama → Response pasted
+```
+
+In agent mode, the fusion step is **skipped entirely**. Both raw transcripts (FR and EN) are sent directly to the Ollama model in a single call. The model is smart enough to understand the user's intent from both versions.
+
+**Pipeline (without bilingual):**
+
+```
+Audio → Whisper (FR) → Transcript + selected text → Ollama → Response pasted
+```
+
+**With selected text:** the agent applies your voice instruction to the selected text. The response **replaces** the selection.
+
+**Without selected text:** the agent responds freely to your voice message and pastes the response at the cursor.
+
+#### Examples
 
 Select some text, then hold Right Command and speak:
 
-- "Améliore ce prompt"
-- "Traduis cela en italien"
+- "Simplifie cette phrase"
+- "Traduis en anglais"
 - "Corrige les erreurs"
-- "Résume ce texte en 3 bullet points"
+- "Résume en 3 bullet points"
 - "Explain this code"
+- "Réécris de manière plus concise"
 
-The AI response replaces the pasted text. If no text is selected, the agent just responds to your voice message.
+Without selection:
+
+- "Écris-moi un email de relance"
+- "Donne-moi la commande git pour..."
 
 ## Menu bar options
 
