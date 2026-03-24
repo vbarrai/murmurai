@@ -35,8 +35,7 @@ The Whisper model (~500 Mo for `small`) is downloaded automatically at first lau
 Install [Ollama](https://ollama.com), then pull a model:
 
 ```bash
-ollama pull qwen2.5-coder:7b   # for bilingual fusion (fast)
-ollama pull gpt-oss:20b         # for agent mode (or any model you prefer)
+ollama pull gpt-oss:20b   # for agent mode (or any model you prefer)
 ```
 
 Make sure Ollama is running (`ollama serve`) before using murmurai.
@@ -86,7 +85,6 @@ Click the menu bar icon to access:
 - **Model** — select the Whisper model size
 - **Bilingual FR/EN** — toggle bilingual transcription on/off
 - **Ollama status** — shows connection status (click to refresh)
-- **Fusion model** — select the Ollama model for bilingual fusion
 - **Agent model** — select the Ollama model for agent responses
 - **↻ Refresh Ollama** — re-check Ollama connection and refresh model list
 
@@ -132,9 +130,11 @@ All settings are stored in `~/.config/murmurai/config.json` and persist across l
   "bilingual": true,
   "transcript_key": "Right Option",
   "agent_key": "Right Command",
-  "fusion_model": "qwen2.5-coder:7b",
   "agent_model": "gpt-oss:20b",
-  "jargon": ["commit", "push", "pull", "merge", "deploy", "..."]
+  "jargon": {
+    "kubectl": ["kubecétéèle"],
+    "terraform": ["terraformer"]
+  }
 }
 ```
 
@@ -150,19 +150,25 @@ Selectable from the menu bar. Available sizes:
 | `medium` | ~1.5 Go | Slower | Very good |
 | `large-v3` | ~3 Go | Slowest | Best |
 
-### Ollama models
+### Ollama
 
-Selectable from the menu bar:
+Ollama is only needed for **agent mode**. Bilingual fusion is now done locally without any LLM. The menu bar shows the Ollama connection status; when disconnected, agent features are disabled.
 
-- **Fusion model** — used for bilingual transcript fusion (default: `qwen2.5-coder:7b`, fast and code-aware)
-- **Agent model** — used for AI agent responses (default: `gpt-oss:20b`)
-
-The menu bar also shows the Ollama connection status. When Ollama is disconnected, bilingual mode and agent features are automatically disabled.
+- **Agent model** — selectable from the menu bar (default: `gpt-oss:20b`)
 
 ### Technical jargon
 
-A list of technical terms that should stay in English when transcribing French speech. The bilingual fusion model uses this list to detect words that Whisper incorrectly "frenchifies" (e.g. "commit" → "commettre") and replace them with their English original.
+murmurai ships with a built-in dictionary of ~100 technical terms and their French-ified variants (e.g. "commit" → ["commettre", "commiter"]). When bilingual mode is on, the fusion replaces these French variants with the English original — instantly, no LLM needed.
 
-Edit the jargon list from:
-- The menu bar: **Edit Jargon…** opens a text editor window
-- The config file: edit the `"jargon"` array in `~/.config/murmurai/config.json`
+To add your own terms, edit the `"jargon"` dict in `~/.config/murmurai/config.json`:
+
+```json
+{
+  "jargon": {
+    "kubectl": ["kubecétéèle"],
+    "terraform": ["terraformer"]
+  }
+}
+```
+
+User jargon is **merged on top** of the built-in dictionary. App updates add new built-in terms without overwriting your custom entries.

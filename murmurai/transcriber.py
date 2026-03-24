@@ -7,7 +7,7 @@ from typing import Optional
 
 from faster_whisper import WhisperModel
 
-from murmurai.fusion import fuse_transcripts
+from murmurai.jargon import fuse_local
 
 log = logging.getLogger("murmurai")
 
@@ -24,7 +24,6 @@ class LocalTranscriber:
     ):
         self.language = language
         self.bilingual = bilingual
-        self.fusion_model: Optional[str] = None
         self.on_status: Optional[callable] = None
         self.on_text: Optional[callable] = None  # called with partial text during transcription
         self._model_size = model_size
@@ -96,14 +95,13 @@ class LocalTranscriber:
         return " ".join(parts)
 
     def _transcribe_bilingual_from_file(self, audio_path: Path) -> str:
-        """Transcribe file in both FR and EN in parallel, then fuse."""
+        """Transcribe file in both FR and EN in parallel, then fuse locally."""
         text_fr, text_en = self.transcribe_bilingual_raw(audio_path)
 
         if self.on_status:
             self.on_status("Fusion FR/EN…")
-        log.info("Fusing transcripts via Ollama...")
-        kwargs = {}
-        if self.fusion_model:
-            kwargs["model"] = self.fusion_model
-        return fuse_transcripts(text_fr, text_en, **kwargs)
+        log.info("Fusing transcripts locally...")
+        result = fuse_local(text_fr, text_en)
+        log.info("Fusion result: %s", result)
+        return result
 

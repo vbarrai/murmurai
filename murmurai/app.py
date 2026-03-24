@@ -125,7 +125,6 @@ class MurmurAIApp(rumps.App):
         self._bilingual = self._config["bilingual"]
         self._transcript_key = self._config["transcript_key"]
         self._agent_key = self._config["agent_key"]
-        self._fusion_model = self._config["fusion_model"]
         self._agent_model = self._config["agent_model"]
 
         log.info("Loading Whisper model (%s)...", self._current_model)
@@ -133,7 +132,6 @@ class MurmurAIApp(rumps.App):
         self.transcriber = LocalTranscriber(
             model_size=self._current_model, bilingual=self._bilingual,
         )
-        self.transcriber.fusion_model = self._fusion_model
         self.transcriber.on_status = lambda msg: self._hud.update(msg)
         self.transcriber.on_text = lambda text: self._hud.update("Transcription…", text)
         log.info("Model loaded, ready.")
@@ -174,7 +172,6 @@ class MurmurAIApp(rumps.App):
         self._ollama_status_item = rumps.MenuItem(
             "Ollama: checking…", callback=lambda _: self._check_ollama_status(),
         )
-        self._fusion_model_menu = rumps.MenuItem("Fusion model")
         self._agent_model_menu = rumps.MenuItem("Agent model")
         self._populate_ollama_menus()
         self._check_ollama_status()
@@ -189,7 +186,6 @@ class MurmurAIApp(rumps.App):
             self._bilingual_item,
             None,
             self._ollama_status_item,
-            self._fusion_model_menu,
             self._agent_model_menu,
             rumps.MenuItem("↻ Refresh Ollama", callback=lambda _: self._check_ollama_status()),
             None,
@@ -240,30 +236,21 @@ class MurmurAIApp(rumps.App):
         self._check_ollama_status()
 
     def _populate_ollama_menus(self):
-        """Populate fusion and agent model submenus with available Ollama models."""
+        """Populate agent model submenu with available Ollama models."""
         models = _list_ollama_models()
         if not models:
-            models = [self._fusion_model, self._agent_model]
-            # deduplicate while preserving order
-            seen = set()
-            models = [m for m in models if not (m in seen or seen.add(m))]
+            models = [self._agent_model]
 
         # Clear existing items (only if menu is already attached)
         try:
-            self._fusion_model_menu.clear()
             self._agent_model_menu.clear()
         except AttributeError:
             pass
 
         # Use None callback to grey out items when Ollama is disconnected
-        fusion_cb = self._on_fusion_model_selected if self._ollama_connected else None
         agent_cb = self._on_agent_model_selected if self._ollama_connected else None
 
         for name in models:
-            item = rumps.MenuItem(name, callback=fusion_cb)
-            item.state = name == self._fusion_model
-            self._fusion_model_menu.add(item)
-
             item = rumps.MenuItem(name, callback=agent_cb)
             item.state = name == self._agent_model
             self._agent_model_menu.add(item)
@@ -276,23 +263,9 @@ class MurmurAIApp(rumps.App):
             "bilingual": self._bilingual,
             "transcript_key": self._transcript_key,
             "agent_key": self._agent_key,
-            "fusion_model": self._fusion_model,
             "agent_model": self._agent_model,
         })
         cfg.save(self._config)
-
-    def _on_fusion_model_selected(self, sender):
-        if self._is_recording or sender.title == self._fusion_model:
-            return
-        previous = self._fusion_model
-        self._fusion_model = sender.title
-        self.transcriber.fusion_model = self._fusion_model
-        for key in list(self._fusion_model_menu.keys()):
-            item = self._fusion_model_menu[key]
-            if hasattr(item, 'state'):
-                item.state = key == self._fusion_model
-        log.info("Fusion model changed: %s → %s", previous, self._fusion_model)
-        self._save_config()
 
     def _on_agent_model_selected(self, sender):
         if self._is_recording or sender.title == self._agent_model:
@@ -360,7 +333,6 @@ class MurmurAIApp(rumps.App):
                 self.transcriber = LocalTranscriber(
                     model_size=self._current_model, bilingual=self._bilingual,
                 )
-                self.transcriber.fusion_model = self._fusion_model
                 self.transcriber.on_status = lambda msg: self._hud.update(msg)
                 self.transcriber.on_text = lambda text: self._hud.update("Transcription…", text)
                 log.info("Model %s loaded.", self._current_model)
