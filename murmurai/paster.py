@@ -94,35 +94,8 @@ def _key_code(code: int):
 
 
 def replace_text(original: str, replacement: str):
-    """Replace the original selected text with replacement in the frontmost app.
-
-    Uses Cmd+F to find and re-select the original text, then pastes the replacement.
-    """
-    saved_data, saved_types = _get_clipboard()
-
-    # Open Find, paste original text to locate it
-    _pbcopy(original)
-    time.sleep(0.05)
-    _keystroke("f", using="command down")
-    time.sleep(0.2)
-    _keystroke("v", using="command down")
-    time.sleep(0.1)
-    _key_code(36)   # Return — find and select match
-    time.sleep(0.1)
-    _key_code(53)   # Escape — close Find, keep selection
-    time.sleep(0.1)
-
-    # Paste replacement over the selection
-    _pbcopy(replacement)
-    time.sleep(0.05)
-    _keystroke("v", using="command down")
-    time.sleep(0.1)
-
-    # Restore clipboard
-    if saved_data is not None:
-        _set_clipboard(saved_data, saved_types)
-    else:
-        AppKit.NSPasteboard.generalPasteboard().clearContents()
+    """Replace the currently selected text with replacement by pasting over it."""
+    paste_text(replacement)
 
 
 def paste_text(text: str):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -27,7 +28,7 @@ class LocalTranscriber:
         self._device = device
         self._model = WhisperModel(model_size, device=device, compute_type="int8")
 
-    def transcribe(self, audio_path: Path) -> str:
+    def transcribe(self, audio_path: Path, cancel_event: Optional[threading.Event] = None) -> str:
         segments, _ = self._model.transcribe(
             str(audio_path),
             language=self.language or "fr",
@@ -37,6 +38,9 @@ class LocalTranscriber:
         )
         parts = []
         for segment in segments:
+            if cancel_event and cancel_event.is_set():
+                log.info("Transcription cancelled")
+                return ""
             parts.append(segment.text.strip())
             if self.on_text:
                 self.on_text(" ".join(parts))

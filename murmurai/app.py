@@ -15,6 +15,7 @@ from Quartz import (
     CFRunLoopAddSource,
     CFRunLoopRun,
     kCGEventFlagsChanged,
+    kCGEventKeyDown,
     kCGEventTapOptionDefault,
     kCGHeadInsertEventTap,
     kCGSessionEventTap,
@@ -145,10 +146,12 @@ class MurmurAIApp(rumps.App):
         log.info("Model loaded, ready.")
         self._is_recording = False
         self._stop_lock = threading.Lock()
+        self._cancel_event = threading.Event()
         self._agent_mode = False
         self._ollama_connected = False
         self._agent_available = False
         self._hud = HUDOverlay()
+        self._hud.on_cancel = self._cancel_current_operation
         self._pending_quit = False
 
         # Model selection submenu
@@ -420,10 +423,20 @@ class MurmurAIApp(rumps.App):
             self._transcript_key, self._agent_key,
         )
 
+        _VK_ESCAPE = 0x35
+
         def callback(proxy, event_type, event, refcon):
             keycode = Quartz.CGEventGetIntegerValueField(
                 event, Quartz.kCGKeyboardEventKeycode
             )
+
+            # Escape cancels ongoing operations
+            if event_type == kCGEventKeyDown and keycode == _VK_ESCAPE:
+                if self._is_recording or self._stop_lock.locked():
+                    self._cancel_current_operation()
+                    return None  # swallow the key
+                return event
+
             flags = Quartz.CGEventGetFlags(event)
 
             tk, tf = _HOTKEY_OPTIONS[self._transcript_key]
@@ -450,7 +463,7 @@ class MurmurAIApp(rumps.App):
 
             return event
 
-        mask = CGEventMaskBit(kCGEventFlagsChanged)
+        mask = CGEventMaskBit(kCGEventFlagsChanged) | CGEventMaskBit(kCGEventKeyDown)
         tap = CGEventTapCreate(
             kCGSessionEventTap,
             kCGHeadInsertEventTap,
@@ -474,7 +487,18 @@ class MurmurAIApp(rumps.App):
 
         threading.Thread(target=run_tap, daemon=True).start()
 
+    def _cancel_current_operation(self):
+        """Cancel any in-progress recording, transcription, or agent request."""
+        log.info("Cancellation requested")
+        self._cancel_event.set()
+        self._hud.hide()
+        self.title = "🎤"
+        if self._is_recording:
+            self._is_recording = False
+            self.recorder.stop()
+
     def _start_recording(self):
+        self._cancel_event.clear()
         self._is_recording = True
         self.title = "🔴"
         self._hud.show("🎙 Recording…" if not self._agent_mode else "🎙 Recording (agent)…")
@@ -538,10 +562,16 @@ class MurmurAIApp(rumps.App):
 
                 self._hud.update("Transcription…")
 
-                text = self.transcriber.transcribe(audio_path).strip()
-                log.info("Transcript: %s", text)
+                text = self.transcriber.transcribe(
+                    audio_path, cancel_event=self._cancel_event,
+                ).strip()
                 audio_path.unlink(missing_ok=True)
 
+                if self._cancel_event.is_set():
+                    log.info("Operation cancelled")
+                    return
+
+                log.info("Transcript: %s", text)
                 if not text:
                     log.info("No transcription result")
                     return
@@ -549,16 +579,26 @@ class MurmurAIApp(rumps.App):
                 if agent_mode:
                     if self._agent_selection:
                         log.info("With selection: %s", self._agent_selection[:100])
+                    sel_preview = self._agent_selection[:80] + "…" if len(self._agent_selection) > 80 else self._agent_selection
                     detail = ""
                     if self._agent_selection:
-                        detail += f"📄 {self._agent_selection[:60]}\n"
-                    detail += f"🎙 {text[:60]}"
+                        detail += f"📄 {sel_preview}\n"
+                    detail += f"🎙 {text}"
                     self._hud.update(f"Agent… ({self._agent_model})", detail)
                     self.title = "🤖"
                     response = ask_agent(
                         text, selection=self._agent_selection,
                         model=self._agent_model,
+                        on_token=lambda partial: self._hud.update(
+                            f"Agent… ({self._agent_model})", partial,
+                        ),
+                        cancel_event=self._cancel_event,
                     )
+
+                    if self._cancel_event.is_set():
+                        log.info("Operation cancelled")
+                        return
+
                     log.info("Agent response: %s", response)
 
                     if self._agent_selection:
