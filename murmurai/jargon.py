@@ -36,6 +36,7 @@ BUILTIN_JARGON: dict[str, list[str]] = {
     "squash": ["squasher"],
     "reset": ["reseter"],
     "revert": ["reverter", "riverte"],
+    "empty": ["empti", "emti", "emptie"],
     # Development workflow
     "deploy": ["deployer"],
     "release": ["releaser"],

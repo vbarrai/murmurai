@@ -100,9 +100,8 @@ def _check_microphone() -> bool:
 
 _MODEL_SIZES = ["tiny", "base", "small", "medium", "large-v3"]
 
-
-def _list_ollama_models(ollama_url: str = _DEFAULT_OLLAMA_URL) -> list[str]:
-    """Fetch available model names from Ollama."""
+def _list_ollama_models(ollama_url: str = _DEFAULT_OLLAMA_URL) -> list[dict]:
+    """Fetch available models from Ollama with name and size."""
     import json
     from urllib.request import Request, urlopen
     from urllib.error import URLError
@@ -111,7 +110,15 @@ def _list_ollama_models(ollama_url: str = _DEFAULT_OLLAMA_URL) -> list[str]:
         req = Request(f"{ollama_url}/api/tags")
         with urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read())
-        return sorted(m["name"] for m in data.get("models", []))
+        models = []
+        for m in data.get("models", []):
+            size_bytes = m.get("size", 0)
+            if size_bytes >= 1_000_000_000:
+                size_str = f"{size_bytes / 1_000_000_000:.1f} GB"
+            else:
+                size_str = f"{size_bytes / 1_000_000:.0f} MB"
+            models.append({"name": m["name"], "size": size_str})
+        return sorted(models, key=lambda m: m["name"])
     except (URLError, OSError, json.JSONDecodeError):
         log.warning("Could not fetch Ollama models")
         return []
@@ -140,6 +147,7 @@ class MurmurAIApp(rumps.App):
         self._stop_lock = threading.Lock()
         self._agent_mode = False
         self._ollama_connected = False
+        self._agent_available = False
         self._hud = HUDOverlay()
         self._pending_quit = False
 
@@ -210,6 +218,7 @@ class MurmurAIApp(rumps.App):
 
         # Always refresh model menus (status change or manual refresh)
         self._populate_ollama_menus()
+        self._agent_available = connected and len(self._agent_model_titles) > 0
         if connected != was_connected:
             log.info("Ollama %s", "connected" if connected else "disconnected")
 
@@ -221,21 +230,30 @@ class MurmurAIApp(rumps.App):
     def _populate_ollama_menus(self):
         """Populate agent model submenu with available Ollama models."""
         models = _list_ollama_models()
-        if not models:
-            models = [self._agent_model]
 
-        # Clear existing items (only if menu is already attached)
+        # Clear existing items
         try:
             self._agent_model_menu.clear()
         except AttributeError:
             pass
 
-        # Use None callback to grey out items when Ollama is disconnected
-        agent_cb = self._on_agent_model_selected if self._ollama_connected else None
+        # Grey out agent if Ollama disconnected or no models available
+        has_models = self._ollama_connected and len(models) > 0
+        agent_cb = self._on_agent_model_selected if has_models else None
 
-        for name in models:
-            item = rumps.MenuItem(name, callback=agent_cb)
-            item.state = name == self._agent_model
+        # Map display title → real model name for selection handling
+        self._agent_model_titles = {}
+
+        if not models:
+            item = rumps.MenuItem("No models available", callback=None)
+            self._agent_model_menu.add(item)
+            return
+
+        for m in models:
+            title = f"{m['name']}  ({m['size']})"
+            item = rumps.MenuItem(title, callback=agent_cb)
+            item.state = m["name"] == self._agent_model
+            self._agent_model_titles[title] = m["name"]
             self._agent_model_menu.add(item)
 
 
@@ -250,14 +268,17 @@ class MurmurAIApp(rumps.App):
         cfg.save(self._config)
 
     def _on_agent_model_selected(self, sender):
-        if self._is_recording or sender.title == self._agent_model:
+        # Resolve display title to real model name
+        real_name = self._agent_model_titles.get(sender.title, sender.title)
+        if self._is_recording or real_name == self._agent_model:
             return
         previous = self._agent_model
-        self._agent_model = sender.title
+        self._agent_model = real_name
         for key in list(self._agent_model_menu.keys()):
             item = self._agent_model_menu[key]
             if hasattr(item, 'state'):
-                item.state = key == self._agent_model
+                item_name = self._agent_model_titles.get(key, key)
+                item.state = item_name == self._agent_model
         log.info("Agent model changed: %s → %s", previous, self._agent_model)
         self._save_config()
 
@@ -419,8 +440,8 @@ class MurmurAIApp(rumps.App):
             elif keycode == ak:
                 key_down = bool(flags & af)
                 if key_down and not self._is_recording:
-                    if not self._ollama_connected:
-                        log.warning("Agent mode unavailable (Ollama disconnected)")
+                    if not self._agent_available:
+                        log.warning("Agent mode unavailable (Ollama disconnected or no models)")
                         return event
                     self._agent_mode = True
                     self._start_recording()
