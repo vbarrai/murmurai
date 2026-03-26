@@ -91,7 +91,7 @@ def ask_agent(
             data = json.loads(resp.read())
         result = data.get("message", {}).get("content", "").strip()
         if result:
-            log.info("Ollama agent response: %s", result)
+            log.info("Ollama agent (%s) response: %s", model, result)
             return result
         log.warning("Ollama agent returned empty content, falling back to transcript")
         return transcript
