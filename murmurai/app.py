@@ -22,7 +22,7 @@ from Quartz import (
 )
 
 import murmurai.config as cfg
-from murmurai.fusion import ask_agent, ask_agent_bilingual, _DEFAULT_OLLAMA_URL
+from murmurai.fusion import ask_agent, _DEFAULT_OLLAMA_URL
 from murmurai.hud import HUDOverlay
 from murmurai.paster import grab_selection, paste_text, replace_text
 from murmurai.recorder import AudioRecorder
@@ -122,7 +122,6 @@ class MurmurAIApp(rumps.App):
         super().__init__("murmurai", icon=None, title="🎤")
         self._config = cfg.load()
         self._current_model = self._config["whisper_model"]
-        self._bilingual = self._config["bilingual"]
         self._transcript_key = self._config["transcript_key"]
         self._agent_key = self._config["agent_key"]
         self._agent_model = self._config["agent_model"]
@@ -130,7 +129,7 @@ class MurmurAIApp(rumps.App):
         log.info("Loading Whisper model (%s)...", self._current_model)
         self.recorder = AudioRecorder()
         self.transcriber = LocalTranscriber(
-            model_size=self._current_model, bilingual=self._bilingual,
+            model_size=self._current_model,
         )
         self.transcriber.on_status = lambda msg: self._hud.update(msg)
         self.transcriber.on_text = lambda text: self._hud.update(
@@ -138,6 +137,7 @@ class MurmurAIApp(rumps.App):
         )
         log.info("Model loaded, ready.")
         self._is_recording = False
+        self._stop_lock = threading.Lock()
         self._agent_mode = False
         self._ollama_connected = False
         self._hud = HUDOverlay()
@@ -164,12 +164,6 @@ class MurmurAIApp(rumps.App):
             item.state = key_name == self._agent_key
             self._agent_key_menu.add(item)
 
-        # Bilingual toggle
-        self._bilingual_item = rumps.MenuItem(
-            "Bilingual FR/EN", callback=self._on_bilingual_toggled,
-        )
-        self._bilingual_item.state = self._bilingual
-
         # Ollama status + model submenus
         self._ollama_status_item = rumps.MenuItem(
             "Ollama: checking…", callback=lambda _: self._check_ollama_status(),
@@ -185,7 +179,6 @@ class MurmurAIApp(rumps.App):
             self._transcript_key_menu,
             self._agent_key_menu,
             self._model_menu,
-            self._bilingual_item,
             None,
             self._ollama_status_item,
             self._agent_model_menu,
@@ -214,18 +207,6 @@ class MurmurAIApp(rumps.App):
         self._ollama_status_item.title = (
             "Ollama: ✓ connected" if connected else "Ollama: ✗ disconnected"
         )
-
-        # Enable/disable bilingual toggle
-        self._bilingual_item.set_callback(
-            self._on_bilingual_toggled if connected else None
-        )
-
-        # Disable bilingual if disconnected
-        if not connected and self._bilingual:
-            self._bilingual = False
-            self._bilingual_item.state = False
-            self.transcriber.bilingual = False
-            log.info("Bilingual mode disabled (Ollama disconnected)")
 
         # Always refresh model menus (status change or manual refresh)
         self._populate_ollama_menus()
@@ -262,7 +243,6 @@ class MurmurAIApp(rumps.App):
         """Persist all current settings to config.json."""
         self._config.update({
             "whisper_model": self._current_model,
-            "bilingual": self._bilingual,
             "transcript_key": self._transcript_key,
             "agent_key": self._agent_key,
             "agent_model": self._agent_model,
@@ -279,15 +259,6 @@ class MurmurAIApp(rumps.App):
             if hasattr(item, 'state'):
                 item.state = key == self._agent_model
         log.info("Agent model changed: %s → %s", previous, self._agent_model)
-        self._save_config()
-
-    def _on_bilingual_toggled(self, sender):
-        if self._is_recording:
-            return
-        self._bilingual = not self._bilingual
-        sender.state = self._bilingual
-        self.transcriber.bilingual = self._bilingual
-        log.info("Bilingual mode: %s", "ON" if self._bilingual else "OFF")
         self._save_config()
 
     def _on_transcript_key_selected(self, sender):
@@ -333,7 +304,7 @@ class MurmurAIApp(rumps.App):
         def reload():
             try:
                 self.transcriber = LocalTranscriber(
-                    model_size=self._current_model, bilingual=self._bilingual,
+                    model_size=self._current_model,
                 )
                 self.transcriber.on_status = lambda msg: self._hud.update(msg)
                 self.transcriber.on_text = lambda text: self._hud.update(
@@ -525,6 +496,8 @@ class MurmurAIApp(rumps.App):
         threading.Thread(target=guard, daemon=True).start()
 
     def _stop_recording_and_transcribe(self):
+        if not self._stop_lock.acquire(blocking=False):
+            return  # already stopping
         self._is_recording = False
         agent_mode = self._agent_mode
         self.title = "🤖" if agent_mode else "⏳"
@@ -544,29 +517,25 @@ class MurmurAIApp(rumps.App):
 
                 self._hud.update("Transcription…")
 
-                if agent_mode and self._bilingual:
-                    # Agent + bilingual: skip fusion, send both transcripts
-                    # to agent in a single Ollama call
-                    text_fr, text_en = self.transcriber.transcribe_bilingual_raw(
-                        audio_path,
-                    )
-                    audio_path.unlink(missing_ok=True)
+                text = self.transcriber.transcribe(audio_path).strip()
+                log.info("Transcript: %s", text)
+                audio_path.unlink(missing_ok=True)
 
-                    if not text_fr and not text_en:
-                        log.info("No transcription result")
-                        return
+                if not text:
+                    log.info("No transcription result")
+                    return
 
+                if agent_mode:
                     if self._agent_selection:
                         log.info("With selection: %s", self._agent_selection[:100])
                     detail = ""
                     if self._agent_selection:
                         detail += f"📄 {self._agent_selection[:60]}\n"
-                    detail += f"🎙 {text_fr[:60]}"
+                    detail += f"🎙 {text[:60]}"
                     self._hud.update(f"Agent… ({self._agent_model})", detail)
                     self.title = "🤖"
-                    response = ask_agent_bilingual(
-                        text_fr, text_en,
-                        selection=self._agent_selection,
+                    response = ask_agent(
+                        text, selection=self._agent_selection,
                         model=self._agent_model,
                     )
                     log.info("Agent response: %s", response)
@@ -576,36 +545,7 @@ class MurmurAIApp(rumps.App):
                     else:
                         paste_text(response)
                 else:
-                    # Transcript mode (with optional fusion) or agent without bilingual
-                    text = self.transcriber.transcribe(audio_path).strip()
-                    log.info("Transcript: %s", text)
-                    audio_path.unlink(missing_ok=True)
-
-                    if not text:
-                        log.info("No transcription result")
-                        return
-
-                    if agent_mode:
-                        if self._agent_selection:
-                            log.info("With selection: %s", self._agent_selection[:100])
-                        detail = ""
-                        if self._agent_selection:
-                            detail += f"📄 {self._agent_selection[:60]}\n"
-                        detail += f"🎙 {text[:60]}"
-                        self._hud.update(f"Agent… ({self._agent_model})", detail)
-                        self.title = "🤖"
-                        response = ask_agent(
-                            text, selection=self._agent_selection,
-                            model=self._agent_model,
-                        )
-                        log.info("Agent response: %s", response)
-
-                        if self._agent_selection:
-                            replace_text(self._agent_selection, response)
-                        else:
-                            paste_text(response)
-                    else:
-                        paste_text(text)
+                    paste_text(text)
 
                 log.info("Text pasted to cursor")
             except Exception as e:
@@ -614,6 +554,7 @@ class MurmurAIApp(rumps.App):
             finally:
                 self._hud.hide()
                 self.title = "🎤"
+                self._stop_lock.release()
 
         threading.Thread(target=finalize, daemon=True).start()
 

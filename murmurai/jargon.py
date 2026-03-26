@@ -15,34 +15,35 @@ log = logging.getLogger("murmurai")
 
 # Built-in jargon: English term → list of French-ified variants Whisper may produce.
 # Lowercase variants are matched case-insensitively.
+# Only franglais variants — words Whisper may write when English terms are
+# pronounced with a French accent.  Real French words (pousser, fusion, …)
+# are NOT listed here because Whisper already transcribes the actual English
+# word correctly when it is spoken in English.
 BUILTIN_JARGON: dict[str, list[str]] = {
     # Git / version control
-    "commit": ["commettre", "commiter", "comité", "comite", "commette"],
-    "push": ["pousser", "poucher", "pouche", "pousse"],
-    "pull": ["tirer", "puller"],
-    "merge": ["fusionner", "merger", "fusion"],
+    "commit": ["commiter", "comité", "comite", "commette"],
+    "push": ["poucher", "pouche"],
+    "pull": ["puller"],
+    "merge": ["merger"],
     "rebase": ["rebaser"],
     "cherry-pick": ["cherry-picker"],
     "stash": ["stasher"],
-    "branch": ["brancher", "branche"],
     "checkout": ["checker"],
-    "clone": ["cloner"],
     "fetch": ["fetcher"],
     "fork": ["forker"],
     "tag": ["taguer", "tagger"],
     "diff": ["differ"],
     "squash": ["squasher"],
-    "reset": ["reseter", "réinitialiser"],
-    "revert": ["reverter"],
+    "reset": ["reseter"],
+    "revert": ["reverter", "riverte"],
     # Development workflow
-    "deploy": ["déployer", "deployer"],
-    "release": ["releaser", "relâcher"],
-    "build": ["builder", "construire"],
-    "debug": ["déboguer", "débugger", "debugger", "débugguer"],
+    "deploy": ["deployer"],
+    "release": ["releaser"],
+    "build": ["builder"],
+    "debug": ["débugger", "debugger", "débugguer"],
     "refactor": ["refactorer", "refactoriser"],
-    "review": ["reviewer", "revoir"],
+    "review": ["reviewer"],
     "sprint": ["sprinter"],
-    "standup": ["stand-up"],
     "backlog": ["backloguer"],
     "ticket": ["ticketer"],
     "feature": ["featurer"],
@@ -50,99 +51,21 @@ BUILTIN_JARGON: dict[str, list[str]] = {
     "bugfix": ["bugfixer"],
     "rollback": ["rollbacker"],
     "staging": ["stager"],
-    "production": ["productionner"],
     # Code concepts
-    "API": ["api"],
-    "endpoint": ["point de terminaison"],
-    "frontend": ["front-end", "frontal"],
-    "backend": ["back-end", "dorsal"],
+    "frontend": ["front-end"],
+    "backend": ["back-end"],
     "fullstack": ["full-stack"],
-    "framework": ["cadriciel"],
-    "library": ["librairie", "bibliothèque"],
-    "package": ["paquet", "paquetage"],
-    "module": [],
-    "plugin": ["plugiciel", "greffon"],
-    "import": ["importer"],
-    "export": ["exporter"],
-    "async": ["asynchrone"],
-    "await": ["attendre"],
-    "callback": ["rappel"],
-    "promise": ["promesse"],
-    "middleware": ["intergiciel"],
-    "proxy": ["mandataire"],
-    "cache": ["cacher", "mémoire cache"],
-    "router": ["routeur"],
-    "handler": ["gestionnaire"],
-    "payload": ["charge utile"],
-    "token": ["jeton"],
-    "webhook": ["crochet web"],
-    "socket": ["prise"],
-    "stream": ["flux", "streamer"],
-    "runtime": ["exécution"],
-    "compiler": ["compilateur"],
-    "linter": ["linteur"],
-    "formatter": ["formateur"],
-    # Infrastructure / DevOps
-    "cloud": ["nuage", "infonuagique"],
-    "server": ["serveur"],
-    "cluster": ["grappe"],
-    "container": ["conteneur"],
-    "pod": [],
-    "namespace": ["espace de noms"],
-    "pipeline": ["tuyau", "conduit"],
-    "workflow": ["flux de travail"],
-    "CI/CD": [],
-    "DevOps": [],
-    "docker": ["dockeriser"],
-    "Kubernetes": [],
-    "load balancer": ["équilibreur de charge"],
+    "stream": ["streamer"],
     # Data
-    "database": ["base de données"],
-    "query": ["requête", "requêter"],
-    "schema": ["schéma"],
-    "migration": ["migrer"],
-    "seed": ["ensemencer", "seeder"],
-    "index": ["indexer"],
-    "join": ["joindre", "jointure"],
-    "insert": ["insérer"],
-    "update": ["mettre à jour"],
-    "delete": ["supprimer", "déleter"],
+    "seed": ["seeder"],
+    "delete": ["déleter"],
     # Testing
-    "test": ["tester"],
-    "mock": ["mocker", "simuler"],
-    "stub": ["stuber", "bouchon"],
-    "fixture": [],
-    "coverage": ["couverture"],
-    "unit test": ["test unitaire"],
-    "integration test": ["test d'intégration"],
-    "end-to-end": ["bout en bout"],
-    # Tools / technologies
-    "TypeScript": [],
-    "JavaScript": [],
-    "Python": [],
-    "React": [],
-    "Node.js": [],
-    "Git": [],
-    "GitHub": [],
-    "GitLab": [],
-    "VS Code": [],
-    "Slack": [],
-    "Jira": [],
-    "Confluence": [],
-    "Notion": [],
-    "Figma": [],
-    "README": ["rythmi", "rythme y", "read me", "lisez-moi"],
-    # Agile / project
-    "scrum": [],
-    "kanban": [],
-    "roadmap": ["feuille de route"],
-    "milestone": ["jalon"],
-    "deadline": ["date limite", "échéance"],
-    "pull request": ["demande de tirage"],
-    "code review": ["revue de code"],
-    "pair programming": ["programmation en binôme"],
-    "onboarding": ["intégration"],
-    "offboarding": ["départ"],
+    "mock": ["mocker"],
+    "stub": ["stuber"],
+    # Misc
+    "fix": ["fixe"],
+    "true": ["trou"],
+    "README": ["rythmi", "rythme y", "read me"],
 }
 
 
@@ -170,34 +93,24 @@ def load_jargon() -> dict[str, list[str]]:
     return merged
 
 
-def fuse_local(text_fr: str, text_en: str) -> str:
-    """Replace French-ified technical terms in FR transcript with English originals.
+def fix_jargon(text: str) -> str:
+    """Replace franglais variants with their English originals.
 
-    Uses the EN transcript to confirm which terms were actually spoken in English.
     Instant — no LLM call needed.
     """
-    if not text_fr:
-        return text_en or ""
-    if not text_en:
-        return text_fr
+    if not text:
+        return ""
 
     jargon = load_jargon()
-    result = text_fr
-    en_lower = text_en.lower()
+    result = text
 
-    for english_term, french_variants in jargon.items():
-        # Check if the English term appears in the EN transcript
-        if english_term.lower() not in en_lower:
-            continue
-
-        # Try to replace each French variant in the FR transcript
-        for fr_variant in french_variants:
-            if not fr_variant:
+    for english_term, variants in jargon.items():
+        for variant in variants:
+            if not variant:
                 continue
-            # Case-insensitive replacement, preserve surrounding text
-            pattern = re.compile(re.escape(fr_variant), re.IGNORECASE)
+            pattern = re.compile(re.escape(variant), re.IGNORECASE)
             if pattern.search(result):
                 result = pattern.sub(english_term, result)
-                log.debug("Fusion: '%s' → '%s'", fr_variant, english_term)
+                log.debug("Jargon: '%s' → '%s'", variant, english_term)
 
     return result
