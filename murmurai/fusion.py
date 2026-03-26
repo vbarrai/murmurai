@@ -11,7 +11,7 @@ from urllib.request import Request, urlopen
 log = logging.getLogger("murmurai")
 
 _DEFAULT_OLLAMA_URL = "http://localhost:11434"
-_DEFAULT_MODEL = "gpt-oss:20b"
+_DEFAULT_MODEL = "gemma3:latest"
 
 
 _AGENT_SYSTEM_PROMPT = (
@@ -19,11 +19,12 @@ _AGENT_SYSTEM_PROMPT = (
     "The user selects text on screen, then dictates a voice instruction.\n"
     "The 'Selected text' is the SUBJECT — the text to transform.\n"
     "The 'Voice instruction' tells you WHAT to do with it "
-    "(e.g. 'simplify this sentence', 'translate to English', 'make it shorter').\n"
+    "(e.g. 'simplify this sentence', 'translate to English', 'make it shorter', "
+    "'split into bullet points').\n"
     "Rules:\n"
     "- Apply the instruction to the selected text.\n"
-    "- Output ONLY the resulting text. Nothing else.\n"
-    "- No preamble, no explanation, no quotes, no formatting around it.\n"
+    "- Output ONLY the resulting text. No preamble, no explanation.\n"
+    "- Preserve formatting (newlines, lists, indentation) when appropriate.\n"
     "- Your output will directly replace the selected text, so it must be ready to use as-is.\n"
     "- Respond in the same language as the selected text, unless the instruction says otherwise."
 )

@@ -12,10 +12,9 @@ _CONFIG_FILE = Path.home() / ".config" / "murmurai" / "config.json"
 
 _DEFAULTS = {
     "whisper_model": "small",
-    "bilingual": True,
     "transcript_key": "Right Option",
     "agent_key": "Right Command",
-    "agent_model": "gpt-oss:20b",
+    "agent_model": "gemma3:latest",
     # User jargon: additional terms merged on top of built-in jargon.
     # Format: {"english_term": ["french_variant1", "french_variant2"]}
     "jargon": {
