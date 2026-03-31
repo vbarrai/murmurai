@@ -16,7 +16,13 @@ Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline tra
 
 ## Installation
 
-### DMG (recommended)
+### Homebrew (recommended)
+
+```bash
+brew install --cask vbarrai/tap/murmurai
+```
+
+### DMG
 
 Download the latest `.dmg` from [Releases](https://github.com/vbarrai/murmurai/releases), open it, and drag **murmurai** into your Applications folder.
 
