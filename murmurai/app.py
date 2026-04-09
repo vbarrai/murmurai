@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import multiprocessing
 import subprocess
 import threading
@@ -632,7 +633,7 @@ def main():
         datefmt="%H:%M:%S",
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(log_file),
+            RotatingFileHandler(log_file, maxBytes=50_000, backupCount=0),
         ],
     )
     app = MurmurAIApp()
