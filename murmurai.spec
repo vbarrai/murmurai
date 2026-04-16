@@ -2,9 +2,14 @@ import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 
+# Read version from setuptools_scm generated file
+_version_ns = {}
+exec(Path("murmurai/_version.py").read_text(), _version_ns)
+__version__ = _version_ns.get("__version__", "dev")
+
 block_cipher = None
 
-datas = collect_data_files("faster_whisper") + collect_data_files("ctranslate2")
+datas = collect_data_files("faster_whisper") + collect_data_files("ctranslate2") + [("murmurai/_version.py", "murmurai")]
 binaries = collect_dynamic_libs("ctranslate2") + collect_dynamic_libs("soundfile")
 
 a = Analysis(
@@ -73,8 +78,8 @@ app = BUNDLE(
     bundle_identifier="com.vbarrai.murmurai",
     info_plist={
         "CFBundleName": "murmurai",
-        "CFBundleVersion": "0.1.0",
-        "CFBundleShortVersionString": "0.1.0",
+        "CFBundleVersion": __version__,
+        "CFBundleShortVersionString": __version__,
         "LSUIElement": True,
         "NSMicrophoneUsageDescription": "murmurai needs microphone access to record speech for transcription.",
     },

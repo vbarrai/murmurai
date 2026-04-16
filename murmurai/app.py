@@ -23,6 +23,7 @@ from Quartz import (
 )
 
 import murmurai.config as cfg
+from murmurai import __version__
 from murmurai.fusion import ask_agent, _DEFAULT_OLLAMA_URL
 from murmurai.hud import HUDOverlay
 from murmurai.paster import grab_selection, paste_text, replace_text
@@ -186,6 +187,7 @@ class MurmurAIApp(rumps.App):
         # Menu items
         self.menu = [
             rumps.MenuItem("murmurai — Push-to-Talk", callback=None),
+            rumps.MenuItem(f"Version {__version__}", callback=None),
             None,  # separator
             self._transcript_key_menu,
             self._agent_key_menu,
