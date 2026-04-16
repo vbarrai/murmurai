@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "murmurai"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Push-to-talk voice transcription for macOS"
 requires-python = ">=3.9"
 dependencies = [
@@ -11,6 +15,11 @@ dependencies = [
     "faster-whisper>=1.0.0",
     "rumps>=0.4.0",
 ]
+
+[tool.setuptools_scm]
+write_to = "murmurai/_version.py"
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0.0"]
