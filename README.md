@@ -161,7 +161,7 @@ Click the menu bar icon to access:
 - **Ollama status** — shows connection status (click to refresh)
 - **Agent model** — select the Ollama model for agent responses
 - **↻ Refresh Ollama** — re-check connection and refresh model list
-- **Edit Settings…** — open `config.json` in your default editor
+- **Edit Settings…** — open `config.json` in your default editor (changes are applied automatically when you save the file — no restart needed)
 - **Open Logs…** — open the log file
 
 ## Development
@@ -174,6 +174,25 @@ murmurai
 ```
 
 This always runs the current code — no rebuild needed.
+
+### Tests
+
+The test suite lives in `tests/` and runs with `pytest`:
+
+```bash
+pip install -e ".[test]"
+pytest
+```
+
+The tests are platform-independent: the macOS-only frameworks (`rumps`,
+`Quartz`, …) and heavy native deps (`faster-whisper`, `sounddevice`) are
+stubbed in `tests/conftest.py` when they aren't installed, so the suite runs
+on Linux CI as well as on macOS. Coverage focuses on the pure logic:
+
+- `test_config.py` — config load/save, defaults merging, corrupt-file fallback
+- `test_jargon.py` — franglais variant replacement and built-in/user merging
+- `test_app_settings_reload.py` — the live settings-reload path (mtime watch,
+  hotkey/agent-model/Whisper-model updates, validation, mtime tracking)
 
 ## Build standalone .app
 
@@ -199,6 +218,8 @@ Logs are written to `~/Library/Logs/murmurai/murmurai.log`.
 ## Configuration
 
 All settings are stored in `~/.config/murmurai/config.json` and persist across launches. Settings can be changed from the menu bar or by editing the JSON file directly.
+
+Edits to the file are picked up live: murmurai watches `config.json` and re-applies your changes within a couple of seconds of saving — there is no need to restart the app. Hotkeys and the agent model take effect immediately; changing `whisper_model` reloads the model in the background. Invalid values (an unknown hotkey, the same key bound to both actions, or an unknown Whisper model) are ignored and the previous setting is kept — check the logs if a change doesn't seem to apply.
 
 ```json
 {
