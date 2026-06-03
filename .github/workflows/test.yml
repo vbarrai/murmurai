@@ -1,0 +1,28 @@
+name: Tests
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The macOS-only and native dependencies (rumps, Quartz, faster-whisper,
+      # sounddevice, …) are not installable on Linux and are stubbed by
+      # tests/conftest.py, so only pytest itself is needed here.
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run tests
+        # `python -m pytest` puts the repo root on sys.path so `import murmurai`
+        # resolves without an editable install (whose mac-only deps won't build
+        # on Linux).
+        run: python -m pytest

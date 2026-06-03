@@ -23,7 +23,11 @@ local_scheme = "no-local-version"
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0.0"]
+test = ["pytest>=7.0"]
 
 [project.scripts]
 murmurai = "murmurai.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 

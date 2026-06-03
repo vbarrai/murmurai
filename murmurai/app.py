@@ -131,6 +131,7 @@ class MurmurAIApp(rumps.App):
     def __init__(self):
         super().__init__("murmurai", icon=None, title="🎤")
         self._config = cfg.load()
+        self._config_mtime = self._config_file_mtime()
         self._current_model = self._config["whisper_model"]
         self._transcript_key = self._config["transcript_key"]
         self._agent_key = self._config["agent_key"]
@@ -263,6 +264,13 @@ class MurmurAIApp(rumps.App):
             self._agent_model_menu.add(item)
 
 
+    def _config_file_mtime(self) -> float:
+        """Return the config file's last-modified time, or 0 if unavailable."""
+        try:
+            return cfg.CONFIG_FILE.stat().st_mtime
+        except OSError:
+            return 0.0
+
     def _save_config(self):
         """Persist all current settings to config.json."""
         self._config.update({
@@ -272,6 +280,77 @@ class MurmurAIApp(rumps.App):
             "agent_model": self._agent_model,
         })
         cfg.save(self._config)
+        # Track our own write so the config watcher doesn't treat it as an
+        # external edit and reload needlessly.
+        self._config_mtime = self._config_file_mtime()
+
+    @rumps.timer(2)
+    def _watch_config(self, _):
+        """Reload settings when config.json is edited externally (Edit Settings…)."""
+        if self._is_recording:
+            return  # don't change settings mid-recording; retry next tick
+        mtime = self._config_file_mtime()
+        if mtime == self._config_mtime:
+            return
+        self._config_mtime = mtime
+        self._apply_external_config()
+
+    def _apply_external_config(self):
+        """Re-read config.json and apply any externally edited settings."""
+        try:
+            new = cfg.load()
+        except Exception as exc:
+            log.warning("Could not reload config: %s", exc)
+            return
+
+        self._config = new
+        log.info("Config file changed, reloading settings")
+
+        # Hotkeys — applied live (the event tap reads these attributes directly).
+        transcript_key = new.get("transcript_key", self._transcript_key)
+        agent_key = new.get("agent_key", self._agent_key)
+        if (transcript_key in _HOTKEY_OPTIONS
+                and agent_key in _HOTKEY_OPTIONS
+                and transcript_key != agent_key):
+            if transcript_key != self._transcript_key:
+                log.info("Transcript key changed via config: %s → %s",
+                         self._transcript_key, transcript_key)
+                self._transcript_key = transcript_key
+                for key_name in _HOTKEY_OPTIONS:
+                    self._transcript_key_menu[key_name].state = (
+                        key_name == self._transcript_key)
+            if agent_key != self._agent_key:
+                log.info("Agent key changed via config: %s → %s",
+                         self._agent_key, agent_key)
+                self._agent_key = agent_key
+                for key_name in _HOTKEY_OPTIONS:
+                    self._agent_key_menu[key_name].state = (
+                        key_name == self._agent_key)
+        else:
+            log.warning(
+                "Invalid hotkeys in config (transcript=%r, agent=%r), keeping current",
+                transcript_key, agent_key,
+            )
+
+        # Agent model.
+        agent_model = new.get("agent_model", self._agent_model)
+        if agent_model != self._agent_model:
+            log.info("Agent model changed via config: %s → %s",
+                     self._agent_model, agent_model)
+            self._agent_model = agent_model
+            for key in list(self._agent_model_menu.keys()):
+                item = self._agent_model_menu[key]
+                if hasattr(item, "state"):
+                    item_name = self._agent_model_titles.get(key, key)
+                    item.state = item_name == self._agent_model
+
+        # Whisper model — reloaded in a background thread if changed.
+        whisper_model = new.get("whisper_model", self._current_model)
+        if whisper_model != self._current_model:
+            self._switch_model(whisper_model)
+
+        # Jargon needs no action: jargon.load_jargon() reads config.json fresh
+        # on every transcription, so edits already take effect immediately.
 
     def _on_agent_model_selected(self, sender):
         # Resolve display title to real model name
@@ -315,12 +394,16 @@ class MurmurAIApp(rumps.App):
         self._save_config()
 
     def _on_model_selected(self, sender):
-        if sender.title == self._current_model:
+        self._switch_model(sender.title)
+
+    def _switch_model(self, new_model):
+        if self._is_recording or new_model == self._current_model:
             return
-        if self._is_recording:
+        if new_model not in _MODEL_SIZES:
+            log.warning("Unknown whisper model '%s', ignoring", new_model)
             return
         previous = self._current_model
-        self._current_model = sender.title
+        self._current_model = new_model
         # Update checkmarks
         for size in _MODEL_SIZES:
             self._model_menu[size].state = size == self._current_model
