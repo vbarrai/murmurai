@@ -5,13 +5,13 @@ import json
 import murmurai.config as cfg
 
 
-def test_load_creates_file_with_defaults_when_missing(tmp_config):
+def test_load_missing_file_returns_defaults_without_creating(tmp_config):
     assert not tmp_config.exists()
 
     config = cfg.load()
 
-    # Missing file is created on first load.
-    assert tmp_config.exists()
+    # A missing file must NOT be (re)created on load — defaults just apply.
+    assert not tmp_config.exists()
     assert config["whisper_model"] == cfg._DEFAULTS["whisper_model"]
     assert config["transcript_key"] == cfg._DEFAULTS["transcript_key"]
 
@@ -74,6 +74,22 @@ def test_load_corrupt_json_falls_back_to_defaults(tmp_config):
     # Corrupt file must not crash; defaults are returned instead.
     assert config["whisper_model"] == cfg._DEFAULTS["whisper_model"]
     assert config["agent_key"] == cfg._DEFAULTS["agent_key"]
+
+
+def test_is_file_valid_true_when_missing(tmp_config):
+    assert not tmp_config.exists()
+    # Absent file is valid: defaults apply, nothing to flag.
+    assert cfg.is_file_valid() is True
+
+
+def test_is_file_valid_true_for_valid_json(tmp_config):
+    cfg.save({"whisper_model": "base"})
+    assert cfg.is_file_valid() is True
+
+
+def test_is_file_valid_false_for_corrupt_json(tmp_config):
+    tmp_config.write_text("{ this is not valid json", encoding="utf-8")
+    assert cfg.is_file_valid() is False
 
 
 def test_config_file_alias_points_to_same_path():

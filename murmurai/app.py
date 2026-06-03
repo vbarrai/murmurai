@@ -186,6 +186,13 @@ class MurmurAIApp(rumps.App):
         self._populate_ollama_menus()
         self._check_ollama_status()
 
+        # Settings entry + a greyed line that appears only when the config
+        # file is missing or invalid (defaults are in effect in that case).
+        self._edit_settings_item = rumps.MenuItem(
+            "Edit Settings…", callback=self._on_edit_settings)
+        self._config_status_item = rumps.MenuItem(
+            "⚠️ Invalid config — using defaults", callback=None)
+
         # Menu items
         self.menu = [
             rumps.MenuItem("murmurai — Push-to-Talk", callback=None),
@@ -199,10 +206,14 @@ class MurmurAIApp(rumps.App):
             self._agent_model_menu,
             rumps.MenuItem("↻ Refresh Ollama", callback=lambda _: self._check_ollama_status()),
             None,
-            rumps.MenuItem("Edit Settings…", callback=self._on_edit_settings),
+            self._edit_settings_item,
+            self._config_status_item,
             rumps.MenuItem("Open Logs…", callback=self._open_logs),
             None,
         ]
+
+        # Reflect the on-disk config validity in the menu right away.
+        self._set_config_status(not cfg.is_file_valid())
 
     def _check_ollama_status(self):
         """Check if Ollama server is reachable and update UI accordingly."""
@@ -295,8 +306,30 @@ class MurmurAIApp(rumps.App):
         self._config_mtime = mtime
         self._apply_external_config()
 
+    def _set_config_status(self, invalid: bool):
+        """Reflect config-file validity in the menu.
+
+        Adds a ⚠️ to "Edit Settings…" and reveals a greyed line explaining
+        that defaults are in effect. The line is hidden again once the file
+        is valid (or absent — defaults legitimately apply then too).
+        """
+        self._edit_settings_item.title = (
+            "⚠️ Edit Settings…" if invalid else "Edit Settings…"
+        )
+        menuitem = getattr(self._config_status_item, "_menuitem", None)
+        if menuitem is not None:  # real rumps; hide the line entirely when OK
+            menuitem.setHidden_(not invalid)
+
     def _apply_external_config(self):
         """Re-read config.json and apply any externally edited settings."""
+        if not cfg.is_file_valid():
+            # Don't touch the file or reset settings — keep what's running and
+            # flag the problem so the user can fix their hand edit.
+            log.warning("Config file is invalid JSON, keeping current settings")
+            self._set_config_status(True)
+            return
+        self._set_config_status(False)
+
         try:
             new = cfg.load()
         except Exception as exc:
@@ -434,10 +467,12 @@ class MurmurAIApp(rumps.App):
 
     def _on_edit_settings(self, _):
         """Open the config.json file in the default editor."""
-        # Ensure config file exists
-        self._save_config()
-        config_file = Path.home() / ".config" / "murmurai" / "config.json"
-        subprocess.Popen(["open", str(config_file)])
+        # Never overwrite a broken hand edit — open it as-is so the user can
+        # repair it. When the file is valid (or absent) materialise current
+        # settings first so there's something to edit.
+        if cfg.is_file_valid():
+            self._save_config()
+        subprocess.Popen(["open", str(cfg.CONFIG_FILE)])
 
     def _open_logs(self, _):
         log_file = Path.home() / "Library" / "Logs" / "murmurai" / "murmurai.log"

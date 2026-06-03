@@ -26,7 +26,12 @@ _DEFAULTS = {
 
 
 def load() -> dict:
-    """Load config from disk, merging with defaults for any missing keys."""
+    """Load config from disk, merging with defaults for any missing keys.
+
+    The file is never created or rewritten here: a missing or invalid file
+    simply yields the defaults. Persisting only happens on explicit user
+    actions (a menu change, or opening "Edit Settings…").
+    """
     config = dict(_DEFAULTS)
     if _CONFIG_FILE.exists():
         try:
@@ -34,9 +39,23 @@ def load() -> dict:
             config.update(user)
         except (json.JSONDecodeError, OSError) as exc:
             log.warning("Could not read config (%s), using defaults", exc)
-    else:
-        save(config)
     return config
+
+
+def is_file_valid() -> bool:
+    """Report whether the config file on disk is usable.
+
+    A missing file is valid: load() recreates it from defaults. Only a file
+    that exists but contains unparseable JSON — typically a botched hand edit
+    via "Edit Settings…" — is reported as invalid so the UI can flag it.
+    """
+    if not _CONFIG_FILE.exists():
+        return True
+    try:
+        json.loads(_CONFIG_FILE.read_text(encoding="utf-8"))
+        return True
+    except (json.JSONDecodeError, OSError):
+        return False
 
 
 def save(config: dict):

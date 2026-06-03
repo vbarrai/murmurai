@@ -46,10 +46,40 @@ def test_watch_config_skips_while_recording(app, monkeypatch):
     assert app._config_mtime == 100.0
 
 
-# --- _apply_external_config: hotkeys ----------------------------------------
+# --- _apply_external_config: invalid file flagging --------------------------
 
 def _patch_load(monkeypatch, config):
     monkeypatch.setattr(appmod.cfg, "load", lambda: config)
+
+
+def test_apply_flags_warning_and_keeps_settings_on_invalid_config(app, monkeypatch):
+    monkeypatch.setattr(appmod.cfg, "is_file_valid", lambda: False)
+
+    def _no_load():
+        raise AssertionError("load() must not run on an invalid file")
+
+    monkeypatch.setattr(appmod.cfg, "load", _no_load)
+
+    app._apply_external_config()
+
+    # Edit Settings… is flagged and the running settings are left untouched.
+    assert app._edit_settings_item.title == "⚠️ Edit Settings…"
+    assert app._transcript_key == "Right Option"
+    assert app._agent_key == "Right Command"
+    assert app._current_model == "small"
+
+
+def test_apply_clears_warning_on_valid_config(app, monkeypatch, base_config):
+    app._edit_settings_item.title = "⚠️ Edit Settings…"
+    monkeypatch.setattr(appmod.cfg, "is_file_valid", lambda: True)
+    _patch_load(monkeypatch, base_config())
+
+    app._apply_external_config()
+
+    assert app._edit_settings_item.title == "Edit Settings…"
+
+
+# --- _apply_external_config: hotkeys ----------------------------------------
 
 
 def test_apply_updates_hotkeys_and_checkmarks(app, monkeypatch, base_config):
@@ -175,6 +205,34 @@ def test_switch_model_reverts_on_load_failure(app, monkeypatch, tmp_config):
     assert app._current_model == "small"
     assert app._model_menu["small"].state is True
     assert app._model_menu["large-v3"].state is False
+
+
+# --- _on_edit_settings: never clobber an invalid file -----------------------
+
+def test_edit_settings_does_not_overwrite_invalid_file(app, monkeypatch):
+    opened = []
+    monkeypatch.setattr(appmod.subprocess, "Popen", lambda args: opened.append(args))
+    monkeypatch.setattr(appmod.cfg, "is_file_valid", lambda: False)
+    monkeypatch.setattr(app, "_save_config", lambda: (_ for _ in ()).throw(
+        AssertionError("must not rewrite an invalid file")))
+
+    app._on_edit_settings(None)
+
+    # File is opened for repair but never rewritten.
+    assert opened and opened[0][0] == "open"
+
+
+def test_edit_settings_materialises_file_when_valid(app, monkeypatch):
+    opened = []
+    saved = []
+    monkeypatch.setattr(appmod.subprocess, "Popen", lambda args: opened.append(args))
+    monkeypatch.setattr(appmod.cfg, "is_file_valid", lambda: True)
+    monkeypatch.setattr(app, "_save_config", lambda: saved.append(True))
+
+    app._on_edit_settings(None)
+
+    assert saved == [True]
+    assert opened and opened[0][0] == "open"
 
 
 # --- _save_config: mtime tracking -------------------------------------------
