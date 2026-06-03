@@ -8,7 +8,8 @@ from pathlib import Path
 
 log = logging.getLogger("murmurai")
 
-_CONFIG_FILE = Path.home() / ".config" / "murmurai" / "config.json"
+CONFIG_FILE = Path.home() / ".config" / "murmurai" / "config.json"
+_CONFIG_FILE = CONFIG_FILE  # backward-compatible alias
 
 _DEFAULTS = {
     "whisper_model": "small",
