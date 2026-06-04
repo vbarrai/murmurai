@@ -186,12 +186,10 @@ class MurmurAIApp(rumps.App):
         self._populate_ollama_menus()
         self._check_ollama_status()
 
-        # Settings entry + a greyed line that appears only when the config
-        # file is missing or invalid (defaults are in effect in that case).
+        # Settings entry. A ⚠️ is prepended to its title when the config file
+        # is missing or invalid (defaults are in effect in that case).
         self._edit_settings_item = rumps.MenuItem(
             "Edit Settings…", callback=self._on_edit_settings)
-        self._config_status_item = rumps.MenuItem(
-            "⚠️ Invalid config — using defaults", callback=None)
 
         # Menu items
         self.menu = [
@@ -207,7 +205,6 @@ class MurmurAIApp(rumps.App):
             rumps.MenuItem("↻ Refresh Ollama", callback=lambda _: self._check_ollama_status()),
             None,
             self._edit_settings_item,
-            self._config_status_item,
             rumps.MenuItem("Open Logs…", callback=self._open_logs),
             None,
         ]
@@ -309,16 +306,13 @@ class MurmurAIApp(rumps.App):
     def _set_config_status(self, invalid: bool):
         """Reflect config-file validity in the menu.
 
-        Adds a ⚠️ to "Edit Settings…" and reveals a greyed line explaining
-        that defaults are in effect. The line is hidden again once the file
-        is valid (or absent — defaults legitimately apply then too).
+        Prepends a ⚠️ to "Edit Settings…" when the config file is invalid,
+        signalling that defaults are in effect. The icon is removed once the
+        file is valid (or absent — defaults legitimately apply then too).
         """
         self._edit_settings_item.title = (
             "⚠️ Edit Settings…" if invalid else "Edit Settings…"
         )
-        menuitem = getattr(self._config_status_item, "_menuitem", None)
-        if menuitem is not None:  # real rumps; hide the line entirely when OK
-            menuitem.setHidden_(not invalid)
 
     def _apply_external_config(self):
         """Re-read config.json and apply any externally edited settings."""

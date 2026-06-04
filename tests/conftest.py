@@ -215,8 +215,6 @@ def app(tmp_config):
     instance._agent_model_titles = {}
 
     instance._edit_settings_item = rumps.MenuItem("Edit Settings…")
-    instance._config_status_item = rumps.MenuItem(
-        "⚠️ Invalid config — using defaults")
 
     # Reflect the initial selections in the menu checkmarks.
     instance._transcript_key_menu[instance._transcript_key].state = True
