@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "skills": {
+    "release": {
+      "source": "vbarrai/config-provider-official",
+      "sourceUrl": "https://github.com/vbarrai/config-provider-official.git",
+      "skillPath": "skills/release",
+      "skillFolderHash": "16918ff7cca26e9a805a87a2b9f648b9fc275941",
+      "agents": [
+        "claude-code"
+      ],
+      "trusted": true,
+      "installedAt": "2026-06-05T08:26:44.781Z",
+      "updatedAt": "2026-06-05T08:26:44.781Z"
+    }
+  },
+  "mcpServers": {},
+  "hooks": {
+    "maconfai-update": {
+      "source": "vbarrai/config-provider-official",
+      "sourceUrl": "https://github.com/vbarrai/config-provider-official.git",
+      "folderPath": "hooks/maconfai-update",
+      "folderHash": "2a1c0bba6569780b1d635dfec918aa6eed1cf0d1",
+      "agents": [
+        "claude-code"
+      ],
+      "trusted": true,
+      "handlers": {
+        "claude-code": {
+          "SessionStart": [
+            {
+              "hooks": [
+                {
+                  "type": "command",
+                  "command": ".agents/hooks/maconfai-update/check.sh"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "installedAt": "2026-06-05T08:26:44.896Z",
+      "updatedAt": "2026-06-05T08:26:44.896Z"
+    }
+  }
+}

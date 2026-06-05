@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".agents/hooks/maconfai-update/check.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
