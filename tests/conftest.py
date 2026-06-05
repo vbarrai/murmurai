@@ -168,6 +168,7 @@ def _base_config(**overrides) -> dict:
         "transcript_key": "Right Option",
         "agent_key": "Right Command",
         "agent_model": "gemma3:latest",
+        "transcript_icon": "🎙️",
         "jargon": {},
     }
     config.update(overrides)
@@ -206,10 +207,12 @@ def app(tmp_config):
     instance._transcript_key = "Right Option"
     instance._agent_key = "Right Command"
     instance._agent_model = "gemma3:latest"
+    instance._transcript_icon = "🎙️"
     instance.title = "🎤"
 
     instance._transcript_key_menu = menu_with(appmod._HOTKEY_OPTIONS)
     instance._agent_key_menu = menu_with(appmod._HOTKEY_OPTIONS)
+    instance._transcript_icon_menu = menu_with(appmod._TRANSCRIPT_ICONS)
     instance._model_menu = menu_with(appmod._MODEL_SIZES)
     instance._agent_model_menu = menu_with([])
     instance._agent_model_titles = {}

@@ -156,6 +156,7 @@ Click the menu bar icon to access:
 
 - **Transcript key** — choose which key triggers transcription
 - **Agent key** — choose which key triggers agent mode
+- **Transcript icon** — choose an icon prepended to pasted transcripts (so readers, e.g. on Slack, recognize them as voice transcriptions), or **Aucun** for no icon
 - **Model** — select the Whisper model size
 - **Bilingual FR/EN** — toggle bilingual transcription on/off
 - **Ollama status** — shows connection status (click to refresh)
@@ -219,7 +220,7 @@ Logs are written to `~/Library/Logs/murmurai/murmurai.log`.
 
 All settings are stored in `~/.config/murmurai/config.json` and persist across launches. Settings can be changed from the menu bar or by editing the JSON file directly.
 
-Edits to the file are picked up live: murmurai watches `config.json` and re-applies your changes within a couple of seconds of saving — there is no need to restart the app. Hotkeys and the agent model take effect immediately; changing `whisper_model` reloads the model in the background. Invalid values (an unknown hotkey, the same key bound to both actions, or an unknown Whisper model) are ignored and the previous setting is kept — check the logs if a change doesn't seem to apply.
+Edits to the file are picked up live: murmurai watches `config.json` and re-applies your changes within a couple of seconds of saving — there is no need to restart the app. Hotkeys, the transcript icon, and the agent model take effect immediately; changing `whisper_model` reloads the model in the background. Invalid values (an unknown hotkey, the same key bound to both actions, or an unknown Whisper model) are ignored and the previous setting is kept — check the logs if a change doesn't seem to apply.
 
 ```json
 {
@@ -228,6 +229,7 @@ Edits to the file are picked up live: murmurai watches `config.json` and re-appl
   "transcript_key": "Right Option",
   "agent_key": "Right Command",
   "agent_model": "gpt-oss:20b",
+  "transcript_icon": "🎙️",
   "jargon": {
     "kubectl": ["kubecétéèle"],
     "terraform": ["terraformer"]

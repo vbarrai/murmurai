@@ -33,6 +33,19 @@ from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
 
+# Selectable icons prepended to pasted transcripts so readers (e.g. on Slack)
+# recognize the text as a voice transcription. Maps a menu label to the icon
+# string actually stored in config and prepended to the text. "Aucun" maps to
+# an empty string, disabling the prefix entirely.
+_TRANSCRIPT_ICONS = {
+    "Aucun": "",
+    "🎙️ Micro studio": "🎙️",
+    "🎤 Micro": "🎤",
+    "📼 Magnétophone": "📼",
+    "🗣️ Voix": "🗣️",
+    "💬 Bulle": "💬",
+}
+
 # Key codes and their corresponding modifier flags
 _HOTKEY_OPTIONS = {
     "Right Option":  (0x3D, 0x00080000),  # kVK_RightOption, kCGEventFlagMaskAlternate
@@ -136,6 +149,7 @@ class MurmurAIApp(rumps.App):
         self._transcript_key = self._config["transcript_key"]
         self._agent_key = self._config["agent_key"]
         self._agent_model = self._config["agent_model"]
+        self._transcript_icon = self._config["transcript_icon"]
 
         log.info("Loading Whisper model (%s)...", self._current_model)
         self.recorder = AudioRecorder()
@@ -178,6 +192,13 @@ class MurmurAIApp(rumps.App):
             item.state = key_name == self._agent_key
             self._agent_key_menu.add(item)
 
+        # Transcript icon submenu
+        self._transcript_icon_menu = rumps.MenuItem("Transcript icon")
+        for label, icon in _TRANSCRIPT_ICONS.items():
+            item = rumps.MenuItem(label, callback=self._on_transcript_icon_selected)
+            item.state = icon == self._transcript_icon
+            self._transcript_icon_menu.add(item)
+
         # Ollama status + model submenus
         self._ollama_status_item = rumps.MenuItem(
             "Ollama: checking…", callback=lambda _: self._check_ollama_status(),
@@ -198,6 +219,7 @@ class MurmurAIApp(rumps.App):
             None,  # separator
             self._transcript_key_menu,
             self._agent_key_menu,
+            self._transcript_icon_menu,
             self._model_menu,
             None,
             self._ollama_status_item,
@@ -286,6 +308,7 @@ class MurmurAIApp(rumps.App):
             "transcript_key": self._transcript_key,
             "agent_key": self._agent_key,
             "agent_model": self._agent_model,
+            "transcript_icon": self._transcript_icon,
         })
         cfg.save(self._config)
         # Track our own write so the config watcher doesn't treat it as an
@@ -371,6 +394,16 @@ class MurmurAIApp(rumps.App):
                     item_name = self._agent_model_titles.get(key, key)
                     item.state = item_name == self._agent_model
 
+        # Transcript icon — applied live (read on each paste).
+        transcript_icon = new.get("transcript_icon", self._transcript_icon)
+        if transcript_icon != self._transcript_icon:
+            log.info("Transcript icon changed via config: %r → %r",
+                     self._transcript_icon, transcript_icon)
+            self._transcript_icon = transcript_icon
+            for label, value in _TRANSCRIPT_ICONS.items():
+                self._transcript_icon_menu[label].state = (
+                    value == self._transcript_icon)
+
         # Whisper model — reloaded in a background thread if changed.
         whisper_model = new.get("whisper_model", self._current_model)
         if whisper_model != self._current_model:
@@ -418,6 +451,17 @@ class MurmurAIApp(rumps.App):
         for key_name in _HOTKEY_OPTIONS:
             self._agent_key_menu[key_name].state = key_name == self._agent_key
         log.info("Agent key changed: %s → %s", previous, self._agent_key)
+        self._save_config()
+
+    def _on_transcript_icon_selected(self, sender):
+        icon = _TRANSCRIPT_ICONS.get(sender.title, "")
+        if self._is_recording or icon == self._transcript_icon:
+            return
+        previous = self._transcript_icon
+        self._transcript_icon = icon
+        for label, value in _TRANSCRIPT_ICONS.items():
+            self._transcript_icon_menu[label].state = value == self._transcript_icon
+        log.info("Transcript icon changed: %r → %r", previous, self._transcript_icon)
         self._save_config()
 
     def _on_model_selected(self, sender):
@@ -721,7 +765,8 @@ class MurmurAIApp(rumps.App):
                     else:
                         paste_text(response)
                 else:
-                    paste_text(text)
+                    prefix = f"{self._transcript_icon} " if self._transcript_icon else ""
+                    paste_text(prefix + text)
 
                 log.info("Text pasted to cursor")
             except Exception as e:

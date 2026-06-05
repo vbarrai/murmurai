@@ -137,6 +137,61 @@ def test_apply_updates_agent_model_and_checkmarks(app, monkeypatch, base_config)
     assert app._agent_model_menu["gemma3:latest  (5.0 GB)"].state is False
 
 
+# --- _apply_external_config: transcript icon --------------------------------
+
+def test_apply_updates_transcript_icon_and_checkmarks(app, monkeypatch, base_config):
+    _patch_load(monkeypatch, base_config(transcript_icon="📼"))
+
+    app._apply_external_config()
+
+    assert app._transcript_icon == "📼"
+    assert app._transcript_icon_menu["📼 Magnétophone"].state is True
+    assert app._transcript_icon_menu["🎙️ Micro studio"].state is False
+
+
+def test_apply_disables_transcript_icon_with_none(app, monkeypatch, base_config):
+    _patch_load(monkeypatch, base_config(transcript_icon=""))
+
+    app._apply_external_config()
+
+    assert app._transcript_icon == ""
+    assert app._transcript_icon_menu["Aucun"].state is True
+    assert app._transcript_icon_menu["🎙️ Micro studio"].state is False
+
+
+# --- _on_transcript_icon_selected -------------------------------------------
+
+def test_select_transcript_icon_updates_state_and_persists(app, monkeypatch, tmp_config):
+    import json
+
+    sender = appmod.rumps.MenuItem("📼 Magnétophone")
+
+    app._on_transcript_icon_selected(sender)
+
+    assert app._transcript_icon == "📼"
+    assert app._transcript_icon_menu["📼 Magnétophone"].state is True
+    assert app._transcript_icon_menu["🎙️ Micro studio"].state is False
+    saved = json.loads(tmp_config.read_text(encoding="utf-8"))
+    assert saved["transcript_icon"] == "📼"
+
+
+def test_select_transcript_icon_none_clears_prefix(app, tmp_config):
+    import json
+
+    app._on_transcript_icon_selected(appmod.rumps.MenuItem("Aucun"))
+
+    assert app._transcript_icon == ""
+    assert app._transcript_icon_menu["Aucun"].state is True
+    saved = json.loads(tmp_config.read_text(encoding="utf-8"))
+    assert saved["transcript_icon"] == ""
+
+
+def test_select_transcript_icon_blocked_while_recording(app):
+    app._is_recording = True
+    app._on_transcript_icon_selected(appmod.rumps.MenuItem("📼 Magnétophone"))
+    assert app._transcript_icon == "🎙️"
+
+
 # --- _apply_external_config: whisper model (background reload) ---------------
 
 class _SyncThread:
@@ -256,6 +311,7 @@ def test_save_config_persists_current_settings(app, tmp_config):
     app._transcript_key = "Left Option"
     app._agent_key = "Right Shift"
     app._agent_model = "llama3:8b"
+    app._transcript_icon = "📼"
 
     app._save_config()
 
@@ -264,3 +320,4 @@ def test_save_config_persists_current_settings(app, tmp_config):
     assert saved["transcript_key"] == "Left Option"
     assert saved["agent_key"] == "Right Shift"
     assert saved["agent_model"] == "llama3:8b"
+    assert saved["transcript_icon"] == "📼"
