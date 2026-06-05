@@ -192,6 +192,18 @@ def test_select_transcript_icon_blocked_while_recording(app):
     assert app._transcript_icon == "🎙️"
 
 
+# --- _format_transcript: icon prefix ----------------------------------------
+
+def test_format_transcript_prepends_icon_and_colon(app):
+    app._transcript_icon = "🎙️"
+    assert app._format_transcript("Hello how are you?") == "🎙️: Hello how are you?"
+
+
+def test_format_transcript_without_icon_returns_text_unchanged(app):
+    app._transcript_icon = ""
+    assert app._format_transcript("Hello how are you?") == "Hello how are you?"
+
+
 # --- _apply_external_config: whisper model (background reload) ---------------
 
 class _SyncThread:

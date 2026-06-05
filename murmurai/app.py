@@ -699,6 +699,16 @@ class MurmurAIApp(rumps.App):
                     break
         threading.Thread(target=guard, daemon=True).start()
 
+    def _format_transcript(self, text):
+        """Prepend the configured transcript icon (e.g. "🎙️: ") to ``text``.
+
+        When no icon is configured the text is returned unchanged — no stray
+        ": " prefix is added.
+        """
+        if not self._transcript_icon:
+            return text
+        return f"{self._transcript_icon}: {text}"
+
     def _stop_recording_and_transcribe(self):
         if not self._stop_lock.acquire(blocking=False):
             return  # already stopping
@@ -765,8 +775,7 @@ class MurmurAIApp(rumps.App):
                     else:
                         paste_text(response)
                 else:
-                    prefix = f"{self._transcript_icon} " if self._transcript_icon else ""
-                    paste_text(prefix + text)
+                    paste_text(self._format_transcript(text))
 
                 log.info("Text pasted to cursor")
             except Exception as e:
