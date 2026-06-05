@@ -16,6 +16,9 @@ _DEFAULTS = {
     "transcript_key": "Right Option",
     "agent_key": "Right Command",
     "agent_model": "gemma3:latest",
+    # Icon prepended to pasted transcripts so readers (e.g. on Slack)
+    # recognize the text as a voice transcription. "" disables the prefix.
+    "transcript_icon": "🎙️",
     # User jargon: additional terms merged on top of built-in jargon.
     # Format: {"english_term": ["french_variant1", "french_variant2"]}
     "jargon": {
