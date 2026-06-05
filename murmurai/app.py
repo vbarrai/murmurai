@@ -33,6 +33,10 @@ from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
 
+# Prefix prepended to pasted transcripts so the text is recognizable as a
+# voice transcription (e.g. on Slack, where readers see a microphone icon).
+TRANSCRIPT_PREFIX = "🎙️ "
+
 # Key codes and their corresponding modifier flags
 _HOTKEY_OPTIONS = {
     "Right Option":  (0x3D, 0x00080000),  # kVK_RightOption, kCGEventFlagMaskAlternate
@@ -721,7 +725,7 @@ class MurmurAIApp(rumps.App):
                     else:
                         paste_text(response)
                 else:
-                    paste_text(text)
+                    paste_text(TRANSCRIPT_PREFIX + text)
 
                 log.info("Text pasted to cursor")
             except Exception as e:
