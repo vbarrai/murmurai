@@ -5,7 +5,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
 import sounddevice as sd
@@ -20,10 +20,16 @@ class AudioRecorder:
         sample_rate: int = 16000,
         channels: int = 1,
         chunk_interval: float = 1.5,
+        device: Optional[int] = None,
     ):
         self.sample_rate = sample_rate
         self.channels = channels
         self.chunk_interval = chunk_interval
+        # sounddevice input index, or None to follow the system default.
+        self.device = device
+        # Called with a 0..1 RMS level on every audio callback, for the HUD
+        # waveform. Set to None to skip the computation entirely.
+        self.on_level: Optional[Callable[[float], None]] = None
         self._frames: List[np.ndarray] = []
         self._stream: Optional[sd.InputStream] = None
         self._chunk_queue: Optional[queue.Queue] = None
@@ -41,6 +47,7 @@ class AudioRecorder:
                 samplerate=self.sample_rate,
                 channels=self.channels,
                 dtype="int16",
+                device=self.device,
                 callback=self._audio_callback,
             )
             self._stream.start()
@@ -97,7 +104,25 @@ class AudioRecorder:
         if status:
             print(f"Audio status: {status}")
         self._frames.append(indata.copy())
+        if self.on_level is not None:
+            self.on_level(_rms_level(indata))
 
     @property
     def is_recording(self) -> bool:
         return self._stream is not None and self._stream.active
+
+
+def _rms_level(block: np.ndarray) -> float:
+    """Return the RMS of an int16 block as a 0..1 level.
+
+    The raw RMS of speech sits very low on a linear scale, so it is mapped
+    through a decibel curve (-50 dBFS → 0, 0 dBFS → 1) to give the waveform a
+    usable dynamic range.
+    """
+    if block.size == 0:
+        return 0.0
+    rms = float(np.sqrt(np.mean(np.square(block.astype(np.float32) / 32768.0))))
+    if rms <= 0:
+        return 0.0
+    db = 20.0 * np.log10(rms)
+    return float(min(1.0, max(0.0, (db + 50.0) / 50.0)))

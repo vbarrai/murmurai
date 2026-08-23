@@ -7,12 +7,16 @@ Uses [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for offline tra
 ## Features
 
 - **Push-to-talk transcription** — hold a key, speak, release to paste
-- **Bilingual FR/EN** — transcribes in both French and English in parallel, then fuses the results locally to keep French sentence structure with English technical jargon intact
-- **Technical jargon** — built-in dictionary of ~100 technical terms with their French variants, extensible via config; fusion is instant (no LLM needed)
+- **Technical jargon** — the French transcript is post-processed against a built-in dictionary of ~100 technical terms and their frenchified variants, so "commiter" comes back as "commit"; instant, no LLM needed, extensible via config
 - **AI agent mode** — hold a second key to send your voice instruction (+ any selected text) to Ollama; the AI response replaces the selected text
-- **HUD overlay** — real-time status display showing current step, transcription text, and agent context
-- **Fully local** — no cloud, no API key; transcription and fusion run entirely on your machine (Ollama only needed for agent mode)
-- **Configurable** — hotkeys, Whisper model, agent model, and jargon list all editable from the menu bar or config file
+- **HUD overlay** — a live waveform while you speak, then the current step, transcription text, and agent context
+- **Microphone selection** — pick an input device or follow the macOS default; hot-plugged devices appear automatically
+- **Audio feedback** — short system sounds at the start and end of an operation, so push-to-talk works without looking at the screen
+- **Mute while recording** — optionally silence the speakers while recording so playback is not picked up by the mic
+- **Launch at login** — start murmurai with your session
+- **Two permissions only** — Accessibility and Microphone; text is pasted with `CGEvent`, so there is no Automation prompt
+- **Fully local** — no cloud, no API key; transcription runs entirely on your machine (Ollama only needed for agent mode)
+- **Configurable** — hotkeys, Whisper model, agent model, microphone, and jargon list all editable from the menu bar or config file
 
 ## Installation
 
@@ -40,7 +44,7 @@ pip install -e .
 
 ### Ollama (optional, for agent mode only)
 
-Ollama is only needed if you want to use agent mode. Bilingual transcription works without it.
+Ollama is only needed if you want to use agent mode. Transcription works without it.
 
 Install [Ollama](https://ollama.com), then pull a model:
 
@@ -52,13 +56,18 @@ Make sure Ollama is running (`ollama serve`) before using agent mode.
 
 ## macOS permissions
 
-murmurai needs three permissions in **System Settings > Privacy & Security**:
+murmurai needs two permissions in **System Settings > Privacy & Security**:
 
-- **Accessibility** — to listen for global hotkeys
+- **Accessibility** — to listen for global hotkeys *and* to paste at the cursor
 - **Microphone** — to record audio
-- **Automation (System Events)** — to simulate Cmd+C/Cmd+V
 
 On first launch, macOS will prompt you for each permission automatically. Grant access and the app will activate without needing a restart.
+
+> Earlier versions also required **Automation (System Events)**, because pasting
+> went through `osascript`. Pasting now posts a synthetic Cmd+V with `CGEvent`,
+> which is already covered by the Accessibility grant murmurai needs for its
+> hotkeys — so that third prompt is gone. If it is still listed in System
+> Settings you can revoke it.
 
 ## Usage
 
@@ -74,6 +83,9 @@ murmurai
 | **Transcript** | Right Option (hold) | Records → transcription → pasted at cursor |
 | **Agent** | Right Command (hold) | Records → transcription + selected text → AI agent → response pasted |
 
+Press **Escape** at any point to cancel the current recording, transcription, or
+agent request.
+
 ### Transcript mode
 
 Hold the transcript key, speak, release. Your speech is transcribed locally by Whisper and pasted at the cursor position.
@@ -81,50 +93,28 @@ Hold the transcript key, speak, release. Your speech is transcribed locally by W
 **Pipeline:**
 
 ```
-Audio → Whisper (FR) → Text pasted
+Audio → Whisper (FR) → Jargon fix → Text pasted
 ```
 
-With **bilingual mode** enabled, the pipeline becomes:
+A single French Whisper pass runs, then the transcript is post-processed against
+the jargon dictionary. That step is instant — a regex dictionary lookup, no
+network call and no LLM.
 
-```
-Audio → Whisper (FR) + Whisper (EN) in parallel → Local fusion → Text pasted
-```
+The HUD shows a live waveform while you speak, then the current step and the
+text being transcribed in real time.
 
-The two Whisper passes run in parallel on separate model instances. The local fusion then replaces frenchified technical terms using the jargon dictionary — this step is instant (no network call).
-
-A HUD overlay shows the current step and the text being transcribed in real-time.
-
-### Fusion
-
-The fusion step combines the French and English transcripts into a single result:
-
-1. **Start from the French transcript** — it has the correct sentence structure
-2. **Cross-reference with the English transcript** — identify which words were actually spoken in English
-3. **Replace frenchified terms** — using the jargon dictionary (built-in + user entries)
-
-Example:
+### Jargon fix
 
 | | Transcript |
 |---|---|
-| Whisper FR | "Est-ce que tu peux **commettre** et **pousser** les modifications ?" |
-| Whisper EN | "Can you **commit** and **push** the modifications?" |
-| After fusion | "Est-ce que tu peux **commit** et **push** les modifications ?" |
-
-The fusion is purely local (regex-based dictionary lookup). It does not require Ollama or any network access. When bilingual mode is off, Whisper runs a single French pass and no fusion occurs.
+| Whisper FR | "Est-ce que tu peux **commiter** et **pousher** les modifications ?" |
+| After jargon fix | "Est-ce que tu peux **commit** et **push** les modifications ?" |
 
 ### Agent mode
 
 Hold the agent key, speak, release. Your voice instruction is transcribed and sent to a local Ollama model along with any text you had selected on screen.
 
-**Pipeline (with bilingual):**
-
-```
-Audio → Whisper (FR) + Whisper (EN) in parallel → Both transcripts + selected text → Ollama → Response pasted
-```
-
-In agent mode, the fusion step is **skipped entirely**. Both raw transcripts (FR and EN) are sent directly to the Ollama model in a single call. The model is smart enough to understand the user's intent from both versions.
-
-**Pipeline (without bilingual):**
+**Pipeline:**
 
 ```
 Audio → Whisper (FR) → Transcript + selected text → Ollama → Response pasted
@@ -158,7 +148,10 @@ Click the menu bar icon to access:
 - **Agent key** — choose which key triggers agent mode
 - **Transcript icon** — choose an icon prepended to pasted transcripts (so readers, e.g. on Slack, recognize them as voice transcriptions), or **Aucun** for no icon
 - **Model** — select the Whisper model size
-- **Bilingual FR/EN** — toggle bilingual transcription on/off
+- **Microphone** — select the input device, or follow the system default
+- **Sound effects** — toggle the start/stop/done feedback sounds
+- **Mute while recording** — toggle muting the speakers during recording
+- **Launch at login** — start murmurai with your session (installed `.app` only)
 - **Ollama status** — shows connection status (click to refresh)
 - **Agent model** — select the Ollama model for agent responses
 - **↻ Refresh Ollama** — re-check connection and refresh model list
@@ -176,6 +169,9 @@ murmurai
 
 This always runs the current code — no rebuild needed.
 
+Launch at login is unavailable when running from source: there is no `.app`
+bundle for launchd to relaunch, so the menu item is greyed out.
+
 ### Tests
 
 The test suite lives in `tests/` and runs with `pytest`:
@@ -186,14 +182,19 @@ pytest
 ```
 
 The tests are platform-independent: the macOS-only frameworks (`rumps`,
-`Quartz`, …) and heavy native deps (`faster-whisper`, `sounddevice`) are
-stubbed in `tests/conftest.py` when they aren't installed, so the suite runs
+`Quartz`, `AppKit`, …) and heavy native deps (`faster-whisper`, `sounddevice`)
+are stubbed in `tests/conftest.py` when they aren't installed, so the suite runs
 on Linux CI as well as on macOS. Coverage focuses on the pure logic:
 
 - `test_config.py` — config load/save, defaults merging, corrupt-file fallback
 - `test_jargon.py` — franglais variant replacement and built-in/user merging
 - `test_app_settings_reload.py` — the live settings-reload path (mtime watch,
-  hotkey/agent-model/Whisper-model updates, validation, mtime tracking)
+  hotkey/agent-model/Whisper-model/microphone/toggle updates, validation)
+- `test_audio_devices.py` — input-device enumeration and name→index resolution
+- `test_system_audio.py` — mute/restore, including "leave it muted if the user
+  had muted it"
+- `test_login_item.py` — LaunchAgent install/removal
+- `test_hud_layout.py` — HUD layout arithmetic
 
 ## Build standalone .app
 
@@ -220,22 +221,32 @@ Logs are written to `~/Library/Logs/murmurai/murmurai.log`.
 
 All settings are stored in `~/.config/murmurai/config.json` and persist across launches. Settings can be changed from the menu bar or by editing the JSON file directly.
 
-Edits to the file are picked up live: murmurai watches `config.json` and re-applies your changes within a couple of seconds of saving — there is no need to restart the app. Hotkeys, the transcript icon, and the agent model take effect immediately; changing `whisper_model` reloads the model in the background. Invalid values (an unknown hotkey, the same key bound to both actions, or an unknown Whisper model) are ignored and the previous setting is kept — check the logs if a change doesn't seem to apply.
+Edits to the file are picked up live: murmurai watches `config.json` and re-applies your changes within a couple of seconds of saving — there is no need to restart the app. Hotkeys, the transcript icon, the microphone, the agent model, and the toggles take effect immediately; changing `whisper_model` reloads the model in the background. Invalid values (an unknown hotkey, the same key bound to both actions, or an unknown Whisper model) are ignored and the previous setting is kept — check the logs if a change doesn't seem to apply.
 
 ```json
 {
   "whisper_model": "small",
-  "bilingual": true,
   "transcript_key": "Right Option",
   "agent_key": "Right Command",
   "agent_model": "gpt-oss:20b",
   "transcript_icon": "🎙️",
+  "microphone": "",
+  "sounds": true,
+  "mute_while_recording": false,
+  "launch_at_login": false,
   "jargon": {
     "kubectl": ["kubecétéèle"],
     "terraform": ["terraformer"]
   }
 }
 ```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `microphone` | `""` | Input device name; `""` follows the macOS system default. A device that is configured but unplugged falls back to the default until it is reconnected. |
+| `sounds` | `true` | Play short system sounds at start/stop/done/cancel. |
+| `mute_while_recording` | `false` | Mute the speakers for the duration of the recording. Speakers the user had already muted are left muted. |
+| `launch_at_login` | `false` | Install a per-user LaunchAgent. Ignored when running from source. |
 
 ### Whisper model
 
@@ -251,7 +262,7 @@ Selectable from the menu bar. Available sizes:
 
 ### Ollama
 
-Ollama is only needed for **agent mode**. Bilingual fusion is now done locally without any LLM. The menu bar shows the Ollama connection status; when disconnected, agent features are disabled.
+Ollama is only needed for **agent mode**. The jargon fix is done locally without any LLM. The menu bar shows the Ollama connection status; when disconnected, agent features are disabled.
 
 - **Agent model** — selectable from the menu bar (default: `gpt-oss:20b`)
 
@@ -263,21 +274,21 @@ When you speak French with English technical terms, Whisper tends to "frenchify"
 
 | You say | Whisper transcribes (FR) |
 |---|---|
-| "commit" | "commettre" |
-| "push" | "pousser" |
-| "merge" | "fusionner" |
-| "debug" | "déboguer" |
-| "deploy" | "déployer" |
+| "commit" | "commiter" |
+| "push" | "pousher" |
+| "debug" | "débugger" |
+| "deploy" | "deployer" |
 
 #### How it works
 
-With bilingual mode on, murmurai transcribes the same audio in both French and English in parallel. It then **fuses** the two transcripts locally:
+After the French Whisper pass, murmurai walks the jargon dictionary and replaces
+each frenchified variant with the English term it maps to. The matching is
+case-insensitive and purely local — a regex lookup, no LLM call.
 
-1. Start from the French transcript (correct sentence structure)
-2. Look at the English transcript to identify which technical terms were spoken
-3. Replace the frenchified words with their English originals
-
-This fusion is **instant** — it's a simple dictionary lookup, no LLM call.
+Only *franglais* variants are listed. Real French words (`pousser`, `fusionner`,
+…) are deliberately absent: when the English term is actually spoken in English,
+Whisper already transcribes it correctly, and rewriting genuine French words
+would corrupt ordinary sentences.
 
 #### Built-in vs user jargon
 
@@ -311,4 +322,4 @@ Each entry maps an **English term** (the correct form to keep) to a list of **Fr
 
 #### Legacy format
 
-If your config still has the old list format (`"jargon": ["commit", "push", ...]`), it will still work — each term is added with an empty variant list. But the new dict format is recommended for better fusion accuracy.
+If your config still has the old list format (`"jargon": ["commit", "push", ...]`), it will still work — each term is added with an empty variant list. But the new dict format is recommended: without variants, a term is never actually substituted.

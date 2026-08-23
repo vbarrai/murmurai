@@ -19,6 +19,14 @@ _DEFAULTS = {
     # Icon prepended to pasted transcripts so readers (e.g. on Slack)
     # recognize the text as a voice transcription. "" disables the prefix.
     "transcript_icon": "🎙️",
+    # Input device name, or "" to follow the macOS system default.
+    "microphone": "",
+    # Play short system sounds at the start/end of an operation.
+    "sounds": True,
+    # Mute the speakers while recording so playback is not picked up.
+    "mute_while_recording": False,
+    # Start murmurai when the session opens (installed .app only).
+    "launch_at_login": False,
     # User jargon: additional terms merged on top of built-in jargon.
     # Format: {"english_term": ["french_variant1", "french_variant2"]}
     "jargon": {
