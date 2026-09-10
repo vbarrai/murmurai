@@ -34,13 +34,18 @@ The Whisper model (~500 Mo for `small`) is downloaded automatically at first lau
 
 ### From source
 
+Requires [uv](https://docs.astral.sh/uv/) (`brew install uv`).
+
 ```bash
 git clone https://github.com/vbarrai/murmurai.git
 cd murmurai
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+make dev
 ```
+
+`make dev` creates `.venv` with the interpreter pinned in `.python-version`
+(Python 3.12, the same version the release builds with) and installs murmurai in
+editable mode along with the test and build extras. uv downloads the interpreter
+itself if it is missing — no system Python setup required.
 
 ### Ollama (optional, for agent mode only)
 
@@ -71,9 +76,10 @@ On first launch, macOS will prompt you for each permission automatically. Grant 
 
 ## Usage
 
+Launch murmurai from Applications, or from source:
+
 ```bash
-source .venv/bin/activate
-murmurai
+uv run --no-sync murmurai
 ```
 
 ### Two modes
@@ -163,11 +169,12 @@ Click the menu bar icon to access:
 During development, run directly from source to test your latest changes:
 
 ```bash
-source .venv/bin/activate
-murmurai
+uv run --no-sync murmurai
 ```
 
-This always runs the current code — no rebuild needed.
+This always runs the current code — no rebuild needed. `--no-sync` tells uv to
+use the existing `.venv` as-is; the project is deliberately lock-free, so the
+environment is managed by `make dev` rather than resolved on every run.
 
 Launch at login is unavailable when running from source: there is no `.app`
 bundle for launchd to relaunch, so the menu item is greyed out.
@@ -177,8 +184,7 @@ bundle for launchd to relaunch, so the menu item is greyed out.
 The test suite lives in `tests/` and runs with `pytest`:
 
 ```bash
-pip install -e ".[test]"
-pytest
+make test
 ```
 
 The tests are platform-independent: the macOS-only frameworks (`rumps`,
@@ -201,7 +207,6 @@ on Linux CI as well as on macOS. Coverage focuses on the pure logic:
 To package murmurai as a standalone macOS app (no Python required):
 
 ```bash
-pip install -e ".[build]"
 make install
 ```
 

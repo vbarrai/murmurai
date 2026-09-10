@@ -1,10 +1,18 @@
 """Tests for the HUD's bottom-up layout arithmetic.
 
-The layout is pure geometry, so it is checked without ever creating a window —
-which also keeps it runnable on the Linux CI runner.
+The layout is pure geometry, so it is checked without ever creating a window.
+It lives in ``murmurai.hud_layout`` rather than ``murmurai.hud`` precisely so
+this module imports on the Linux CI runner: ``murmurai.hud`` needs pyobjc and
+is replaced by a stub there (see ``tests/conftest.py``).
 """
 
-from murmurai.hud import _GAP, _PADDING, _TITLE_HEIGHT, _WAVE_HEIGHT, _layout
+from murmurai.hud_layout import (
+    _GAP,
+    _PADDING,
+    _TITLE_HEIGHT,
+    _WAVE_HEIGHT,
+    _layout,
+)
 
 
 def test_title_only():

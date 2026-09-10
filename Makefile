@@ -1,7 +1,14 @@
-.PHONY: build install
+.PHONY: dev test build install
+
+dev:
+	uv venv
+	uv pip install -e ".[test,build]"
+
+test:
+	uv run --no-sync python -m pytest
 
 build:
-	pyinstaller murmurai.spec -y
+	uv run --no-sync pyinstaller murmurai.spec -y
 
 install: build
 	rm -rf /Applications/murmurai.app
