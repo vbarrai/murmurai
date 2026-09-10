@@ -14,13 +14,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          python-version: "3.12"
+          enable-cache: true
 
       - name: Install dependencies
         run: |
-          pip install -e ".[build]"
+          uv venv
+          uv pip install -e ".[build]"
           brew install create-dmg
 
       - name: Extract version from tag
@@ -35,7 +36,7 @@ jobs:
           sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
 
       - name: Build .app with PyInstaller
-        run: pyinstaller murmurai.spec -y
+        run: uv run --no-sync pyinstaller murmurai.spec -y
 
       - name: Create DMG
         run: |

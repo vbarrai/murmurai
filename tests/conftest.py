@@ -96,6 +96,9 @@ def _fake_hud() -> types.ModuleType:
         def hide(self, *args, **kwargs):
             pass
 
+        def set_level(self, *args, **kwargs):
+            pass
+
     mod.HUDOverlay = HUDOverlay
     return mod
 
@@ -112,8 +115,9 @@ def _fake_recorder() -> types.ModuleType:
     mod = types.ModuleType("murmurai.recorder")
 
     class AudioRecorder:
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, *args, device=None, **kwargs):
+            self.device = device
+            self.on_level = None
 
         def start(self, *args, **kwargs):
             pass
@@ -123,6 +127,27 @@ def _fake_recorder() -> types.ModuleType:
 
     mod.AudioRecorder = AudioRecorder
     return mod
+
+
+def _fake_sounddevice() -> types.ModuleType:
+    mod = types.ModuleType("sounddevice")
+
+    def query_devices(index=None):
+        return [] if index is None else {"name": ""}
+
+    class _Default:
+        device = (None, None)
+
+    mod.query_devices = query_devices
+    mod.default = _Default()
+    mod.InputStream = object
+    return mod
+
+
+def _fake_appkit() -> types.ModuleType:
+    from unittest.mock import MagicMock
+
+    return MagicMock(name="AppKit")
 
 
 def _fake_transcriber() -> types.ModuleType:
@@ -145,6 +170,8 @@ def _fake_transcriber() -> types.ModuleType:
 # imports murmurai.app.
 _stub_if_missing("rumps", _fake_rumps)
 _stub_if_missing("Quartz", _fake_quartz)
+_stub_if_missing("AppKit", _fake_appkit)
+_stub_if_missing("sounddevice", _fake_sounddevice)
 _stub_if_missing("murmurai.hud", _fake_hud)
 _stub_if_missing("murmurai.paster", _fake_paster)
 _stub_if_missing("murmurai.recorder", _fake_recorder)
@@ -169,6 +196,10 @@ def _base_config(**overrides) -> dict:
         "agent_key": "Right Command",
         "agent_model": "gemma3:latest",
         "transcript_icon": "🎙️",
+        "microphone": "",
+        "sounds": True,
+        "mute_while_recording": False,
+        "launch_at_login": False,
         "jargon": {},
     }
     config.update(overrides)
@@ -208,6 +239,10 @@ def app(tmp_config):
     instance._agent_key = "Right Command"
     instance._agent_model = "gemma3:latest"
     instance._transcript_icon = "🎙️"
+    instance._microphone = ""
+    instance._sounds = True
+    instance._mute_while_recording = False
+    instance._launch_at_login = False
     instance.title = "🎤"
 
     instance._transcript_key_menu = menu_with(appmod._HOTKEY_OPTIONS)
@@ -217,6 +252,11 @@ def app(tmp_config):
     instance._agent_model_menu = menu_with([])
     instance._agent_model_titles = {}
 
+    instance._microphone_menu = rumps.MenuItem("Microphone")
+    instance._microphone_titles = {}
+    instance._sounds_item = rumps.MenuItem("Sound effects")
+    instance._mute_item = rumps.MenuItem("Mute while recording")
+    instance._launch_item = rumps.MenuItem("Launch at login")
     instance._edit_settings_item = rumps.MenuItem("Edit Settings…")
 
     # Reflect the initial selections in the menu checkmarks.

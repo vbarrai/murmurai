@@ -2,6 +2,27 @@
 
 Guidance for AI agents working in the murmurai repository.
 
+## Development environment
+
+The project uses **uv** exclusively — there is no `pip`/`python -m venv` path
+anymore.
+
+- `make dev` — create `.venv` and install the project with the `test` and
+  `build` extras.
+- `make test` — run the suite (`uv run --no-sync python -m pytest`).
+- `uv run --no-sync murmurai` — run the app from source.
+- `make build` / `make install` — PyInstaller bundle, run through uv.
+
+The interpreter is pinned by `.python-version` (3.12), which matches the version
+the release workflow builds with. There is **no `uv.lock`**: several
+dependencies (`pyobjc-*`, `rumps`) are macOS-only but declared without platform
+markers, so a cross-platform resolution would break the Linux test job. Use
+`uv pip install`, not `uv sync`/`uv add`, unless you also add those markers.
+
+The Linux test job installs nothing from the project — it runs
+`uv run --no-project --with pytest python -m pytest` and relies on the stubs in
+`tests/conftest.py` for the macOS-only imports.
+
 ## Release
 
 murmurai uses a **fully automated, tag-driven release process**. A release is

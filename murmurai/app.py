@@ -24,11 +24,12 @@ from Quartz import (
 )
 
 import murmurai.config as cfg
-from murmurai import __version__
+from murmurai import __version__, audio_devices, login_item, sounds
 from murmurai.fusion import ask_agent, _DEFAULT_OLLAMA_URL
 from murmurai.hud import HUDOverlay
 from murmurai.paster import grab_selection, paste_text, replace_text
 from murmurai.recorder import AudioRecorder
+from murmurai.system_audio import OutputMuter
 from murmurai.transcriber import LocalTranscriber
 
 log = logging.getLogger("murmurai")
@@ -78,15 +79,6 @@ def _check_accessibility() -> bool:
         return False
     del tap
     return True
-
-
-def _check_system_events() -> bool:
-    """Check if the app has System Events (Automation) permission by doing a test call."""
-    result = subprocess.run(
-        ["osascript", "-e", 'tell application "System Events" to return ""'],
-        capture_output=True,
-    )
-    return result.returncode == 0
 
 
 def _check_microphone() -> bool:
@@ -150,9 +142,16 @@ class MurmurAIApp(rumps.App):
         self._agent_key = self._config["agent_key"]
         self._agent_model = self._config["agent_model"]
         self._transcript_icon = self._config["transcript_icon"]
+        self._microphone = self._config["microphone"]
+        self._sounds = bool(self._config["sounds"])
+        self._mute_while_recording = bool(self._config["mute_while_recording"])
+        self._launch_at_login = bool(self._config["launch_at_login"])
 
         log.info("Loading Whisper model (%s)...", self._current_model)
-        self.recorder = AudioRecorder()
+        self.recorder = AudioRecorder(
+            device=audio_devices.resolve_device(self._microphone),
+        )
+        self._muter = OutputMuter()
         self.transcriber = LocalTranscriber(
             model_size=self._current_model,
         )
@@ -169,7 +168,15 @@ class MurmurAIApp(rumps.App):
         self._agent_available = False
         self._hud = HUDOverlay()
         self._hud.on_cancel = self._cancel_current_operation
-        self._pending_quit = False
+        self.recorder.on_level = self._hud.set_level
+
+        # Reconcile the on-disk LaunchAgent with the configured value: the user
+        # may have removed it by hand, or installed the app after enabling it.
+        if login_item.is_available():
+            self._launch_at_login = login_item.set_enabled(self._launch_at_login)
+        elif self._launch_at_login:
+            log.info("Launch at login configured but no .app bundle, ignoring")
+            self._launch_at_login = False
 
         # Model selection submenu
         self._model_menu = rumps.MenuItem("Model")
@@ -199,6 +206,24 @@ class MurmurAIApp(rumps.App):
             item.state = icon == self._transcript_icon
             self._transcript_icon_menu.add(item)
 
+        # Microphone submenu — rebuilt on every open so hot-plugged devices show up
+        self._microphone_menu = rumps.MenuItem("Microphone")
+        self._refresh_microphone_menu()
+
+        # Toggles
+        self._sounds_item = rumps.MenuItem(
+            "Sound effects", callback=self._on_toggle_sounds)
+        self._sounds_item.state = self._sounds
+        self._mute_item = rumps.MenuItem(
+            "Mute while recording", callback=self._on_toggle_mute)
+        self._mute_item.state = self._mute_while_recording
+        self._launch_item = rumps.MenuItem(
+            "Launch at login",
+            callback=self._on_toggle_launch_at_login
+            if login_item.is_available() else None,
+        )
+        self._launch_item.state = self._launch_at_login
+
         # Ollama status + model submenus
         self._ollama_status_item = rumps.MenuItem(
             "Ollama: checking…", callback=lambda _: self._check_ollama_status(),
@@ -221,6 +246,11 @@ class MurmurAIApp(rumps.App):
             self._agent_key_menu,
             self._transcript_icon_menu,
             self._model_menu,
+            self._microphone_menu,
+            None,
+            self._sounds_item,
+            self._mute_item,
+            self._launch_item,
             None,
             self._ollama_status_item,
             self._agent_model_menu,
@@ -309,6 +339,10 @@ class MurmurAIApp(rumps.App):
             "agent_key": self._agent_key,
             "agent_model": self._agent_model,
             "transcript_icon": self._transcript_icon,
+            "microphone": self._microphone,
+            "sounds": self._sounds,
+            "mute_while_recording": self._mute_while_recording,
+            "launch_at_login": self._launch_at_login,
         })
         cfg.save(self._config)
         # Track our own write so the config watcher doesn't treat it as an
@@ -404,6 +438,34 @@ class MurmurAIApp(rumps.App):
                 self._transcript_icon_menu[label].state = (
                     value == self._transcript_icon)
 
+        # Microphone — applied live (the recorder reads it at start()).
+        microphone = new.get("microphone", self._microphone)
+        if microphone != self._microphone:
+            log.info("Microphone changed via config: %r → %r",
+                     self._microphone, microphone)
+            self._microphone = microphone
+            self._apply_microphone()
+            self._refresh_microphone_menu()
+
+        # Simple toggles.
+        sounds_enabled = bool(new.get("sounds", self._sounds))
+        if sounds_enabled != self._sounds:
+            log.info("Sound effects changed via config: %s", sounds_enabled)
+            self._sounds = sounds_enabled
+            self._sounds_item.state = sounds_enabled
+
+        mute = bool(new.get("mute_while_recording", self._mute_while_recording))
+        if mute != self._mute_while_recording:
+            log.info("Mute while recording changed via config: %s", mute)
+            self._mute_while_recording = mute
+            self._mute_item.state = mute
+
+        launch = bool(new.get("launch_at_login", self._launch_at_login))
+        if launch != self._launch_at_login:
+            log.info("Launch at login changed via config: %s", launch)
+            self._launch_at_login = login_item.set_enabled(launch)
+            self._launch_item.state = self._launch_at_login
+
         # Whisper model — reloaded in a background thread if changed.
         whisper_model = new.get("whisper_model", self._current_model)
         if whisper_model != self._current_model:
@@ -464,6 +526,90 @@ class MurmurAIApp(rumps.App):
         log.info("Transcript icon changed: %r → %r", previous, self._transcript_icon)
         self._save_config()
 
+    _SYSTEM_DEFAULT_MIC = "System default"
+
+    def _refresh_microphone_menu(self):
+        """(Re)build the Microphone submenu from the connected input devices."""
+        try:
+            self._microphone_menu.clear()
+        except AttributeError:
+            pass
+
+        default_name = audio_devices.default_input_name()
+        default_title = self._SYSTEM_DEFAULT_MIC
+        if default_name:
+            default_title = f"{self._SYSTEM_DEFAULT_MIC} ({default_name})"
+
+        # Maps the displayed title back to the value stored in config: "" for
+        # the system default, the device name otherwise.
+        self._microphone_titles = {default_title: ""}
+        item = rumps.MenuItem(default_title, callback=self._on_microphone_selected)
+        item.state = not self._microphone
+        self._microphone_menu.add(item)
+
+        for device in audio_devices.list_input_devices():
+            name = device["name"]
+            self._microphone_titles[name] = name
+            item = rumps.MenuItem(name, callback=self._on_microphone_selected)
+            item.state = name == self._microphone
+            self._microphone_menu.add(item)
+
+        # A configured device that is currently unplugged still gets an entry,
+        # so the menu shows what murmurai will switch back to on reconnect.
+        if self._microphone and self._microphone not in self._microphone_titles:
+            title = f"{self._microphone} (disconnected)"
+            self._microphone_titles[title] = self._microphone
+            item = rumps.MenuItem(title, callback=self._on_microphone_selected)
+            item.state = True
+            self._microphone_menu.add(item)
+
+    @rumps.timer(15)
+    def _watch_microphones(self, _):
+        """Pick up hot-plugged / unplugged input devices."""
+        if self._is_recording:
+            return
+        self._refresh_microphone_menu()
+
+    def _apply_microphone(self):
+        """Point the recorder at the configured device."""
+        self.recorder.device = audio_devices.resolve_device(self._microphone)
+
+    def _on_microphone_selected(self, sender):
+        name = self._microphone_titles.get(sender.title, "")
+        if self._is_recording or name == self._microphone:
+            return
+        previous = self._microphone
+        self._microphone = name
+        self._apply_microphone()
+        self._refresh_microphone_menu()
+        log.info("Microphone changed: %r → %r", previous, self._microphone)
+        self._save_config()
+
+    def _on_toggle_sounds(self, sender):
+        self._sounds = not self._sounds
+        sender.state = self._sounds
+        log.info("Sound effects %s", "on" if self._sounds else "off")
+        self._save_config()
+
+    def _on_toggle_mute(self, sender):
+        if self._is_recording:
+            return
+        self._mute_while_recording = not self._mute_while_recording
+        sender.state = self._mute_while_recording
+        log.info("Mute while recording %s",
+                 "on" if self._mute_while_recording else "off")
+        self._save_config()
+
+    def _on_toggle_launch_at_login(self, sender):
+        self._launch_at_login = login_item.set_enabled(not self._launch_at_login)
+        sender.state = self._launch_at_login
+        self._save_config()
+
+    def _play(self, event: str):
+        """Play a feedback sound if the user enabled them."""
+        if self._sounds:
+            sounds.play(event)
+
     def _on_model_selected(self, sender):
         self._switch_model(sender.title)
 
@@ -516,18 +662,6 @@ class MurmurAIApp(rumps.App):
         log_file = Path.home() / "Library" / "Logs" / "murmurai" / "murmurai.log"
         subprocess.Popen(["open", str(log_file)])
 
-    @rumps.timer(1)
-    def _check_pending_quit(self, _):
-        """Check if we need to show the quit dialog (must run on main thread)."""
-        if self._pending_quit:
-            self._pending_quit = False
-            rumps.alert(
-                title="murmurai",
-                message="All permissions granted. Please reopen murmurai for changes to take effect.",
-                ok="Quit",
-            )
-            rumps.quit_application()
-
     def _check_permissions_at_startup(self):
         """Check all permissions at startup. Let macOS prompt the user."""
         # Step 1: Check accessibility — triggers macOS prompt if not granted
@@ -545,34 +679,18 @@ class MurmurAIApp(rumps.App):
         self._check_microphone()
 
     def _check_microphone(self):
-        """Check microphone permission, then proceed to System Events check."""
+        """Check microphone permission, then set up the event tap."""
         if not _check_microphone():
             log.info("Microphone permission not granted, polling...")
             def wait_for_microphone():
                 while not _check_microphone():
                     time.sleep(2)
                 log.info("Microphone permission granted")
-                self._check_and_setup_paste()
+                self._setup_event_tap()
             threading.Thread(target=wait_for_microphone, daemon=True).start()
             return
 
         log.info("Microphone permission OK")
-        self._check_and_setup_paste()
-
-    def _check_and_setup_paste(self):
-        """Check System Events permission, then setup event tap."""
-        if not _check_system_events():
-            log.info("System Events permission not granted, macOS will prompt")
-            # Poll until granted
-            def wait_for_system_events():
-                while not _check_system_events():
-                    time.sleep(2)
-                log.info("System Events permission granted")
-                self._pending_quit = True
-            threading.Thread(target=wait_for_system_events, daemon=True).start()
-            return
-
-        log.info("System Events permission OK")
         self._setup_event_tap()
 
     def _setup_event_tap(self):
@@ -650,17 +768,25 @@ class MurmurAIApp(rumps.App):
         """Cancel any in-progress recording, transcription, or agent request."""
         log.info("Cancellation requested")
         self._cancel_event.set()
+        self._play("cancel")
         self._hud.hide()
         self.title = "🎤"
         if self._is_recording:
             self._is_recording = False
             self.recorder.stop()
+        self._muter.restore()
 
     def _start_recording(self):
         self._cancel_event.clear()
         self._is_recording = True
         self.title = "🔴"
-        self._hud.show("🎙 Recording…" if not self._agent_mode else "🎙 Recording (agent)…")
+        self._play("start")
+        if self._mute_while_recording:
+            self._muter.mute()
+        self._hud.show(
+            "🎙 Recording…" if not self._agent_mode else "🎙 Recording (agent)…",
+            waveform=True,
+        )
 
         # In agent mode, grab the currently selected text via Accessibility API
         self._agent_selection = ""
@@ -722,6 +848,8 @@ class MurmurAIApp(rumps.App):
 
         # Stop recording — returns a WAV file path
         audio_path = self.recorder.stop()
+        self._play("stop")
+        self._muter.restore()
 
         def finalize():
             try:
@@ -778,10 +906,12 @@ class MurmurAIApp(rumps.App):
                     paste_text(self._format_transcript(text))
 
                 log.info("Text pasted to cursor")
+                self._play("done")
             except Exception as e:
                 log.error("Finalization failed: %s", e)
                 rumps.notification("murmurai", "Error", str(e))
             finally:
+                self._muter.restore()
                 self._hud.hide()
                 self.title = "🎤"
                 self._stop_lock.release()

@@ -333,3 +333,91 @@ def test_save_config_persists_current_settings(app, tmp_config):
     assert saved["agent_key"] == "Right Shift"
     assert saved["agent_model"] == "llama3:8b"
     assert saved["transcript_icon"] == "📼"
+
+
+# --- _apply_external_config: microphone and toggles -------------------------
+
+
+def test_apply_updates_microphone_and_recorder(app, monkeypatch, base_config):
+    monkeypatch.setattr(
+        appmod.audio_devices, "resolve_device",
+        lambda name: 3 if name == "USB Mic" else None,
+    )
+    monkeypatch.setattr(
+        appmod.audio_devices, "list_input_devices",
+        lambda: [{"name": "USB Mic", "index": 3}],
+    )
+    monkeypatch.setattr(appmod.audio_devices, "default_input_name", lambda: "Built-in")
+    _patch_load(monkeypatch, base_config(microphone="USB Mic"))
+
+    app._apply_external_config()
+
+    assert app._microphone == "USB Mic"
+    # The recorder must be repointed, otherwise the change only takes effect
+    # after a restart.
+    assert app.recorder.device == 3
+
+
+def test_apply_updates_sound_toggle(app, monkeypatch, base_config):
+    _patch_load(monkeypatch, base_config(sounds=False))
+
+    app._apply_external_config()
+
+    assert app._sounds is False
+    assert bool(app._sounds_item.state) is False
+
+
+def test_apply_updates_mute_toggle(app, monkeypatch, base_config):
+    _patch_load(monkeypatch, base_config(mute_while_recording=True))
+
+    app._apply_external_config()
+
+    assert app._mute_while_recording is True
+    assert bool(app._mute_item.state) is True
+
+
+def test_apply_updates_launch_at_login(app, monkeypatch, base_config):
+    calls = []
+    monkeypatch.setattr(
+        appmod.login_item, "set_enabled",
+        lambda enabled: calls.append(enabled) or enabled,
+    )
+    _patch_load(monkeypatch, base_config(launch_at_login=True))
+
+    app._apply_external_config()
+
+    assert calls == [True]
+    assert app._launch_at_login is True
+    assert bool(app._launch_item.state) is True
+
+
+def test_apply_reflects_refused_launch_at_login(app, monkeypatch, base_config):
+    # Running from source: set_enabled() refuses and reports False, and the
+    # menu must show the real state rather than what config asked for.
+    monkeypatch.setattr(appmod.login_item, "set_enabled", lambda enabled: False)
+    _patch_load(monkeypatch, base_config(launch_at_login=True))
+
+    app._apply_external_config()
+
+    assert app._launch_at_login is False
+    assert bool(app._launch_item.state) is False
+
+
+# --- _save_config: new keys -------------------------------------------------
+
+
+def test_save_config_persists_new_settings(app, tmp_config):
+    app._microphone = "USB Mic"
+    app._sounds = False
+    app._mute_while_recording = True
+    app._launch_at_login = True
+
+    app._save_config()
+
+    import json
+
+    saved = json.loads(tmp_config.read_text(encoding="utf-8"))
+    assert saved["microphone"] == "USB Mic"
+    assert saved["sounds"] is False
+    assert saved["mute_while_recording"] is True
+    assert saved["launch_at_login"] is True

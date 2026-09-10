@@ -11,18 +11,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
-          python-version: "3.12"
+          enable-cache: true
 
-      # The macOS-only and native dependencies (rumps, Quartz, faster-whisper,
-      # sounddevice, …) are not installable on Linux and are stubbed by
-      # tests/conftest.py, so only pytest itself is needed here.
-      - name: Install pytest
-        run: pip install pytest
-
+      # The macOS-only and native dependencies (rumps, Quartz, AVFoundation,
+      # faster-whisper, sounddevice, …) are not installable on Linux and are
+      # stubbed by tests/conftest.py, so only pytest itself is needed here.
+      # `--no-project` skips installing the project (whose mac-only deps won't
+      # build on Linux) and `python -m pytest` puts the repo root on sys.path so
+      # `import murmurai` still resolves. The interpreter comes from
+      # .python-version.
       - name: Run tests
-        # `python -m pytest` puts the repo root on sys.path so `import murmurai`
-        # resolves without an editable install (whose mac-only deps won't build
-        # on Linux).
-        run: python -m pytest
+        run: uv run --no-project --with pytest python -m pytest
